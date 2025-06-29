@@ -1,13 +1,17 @@
 import { Router } from "express";
 import puppeteer from "puppeteer-core";
 import { z } from "zod";
+import { WebSocket } from "ws";
 
 const router = Router();
 
 // Global browser instance for testing
 let testBrowser: any = null;
 let testPage: any = null;
+let testClient: any = null;
 let isConnected = false;
+let isStreaming = false;
+let streamingSockets: Set<WebSocket> = new Set();
 
 const BROWSER_ENDPOINT = process.env.PUPPETEER_ENDPOINT;
 const API_TOKEN = process.env.API_TOKEN;
@@ -20,6 +24,113 @@ if (!BROWSER_ENDPOINT) {
 const navigateSchema = z.object({
   url: z.string().url("Invalid URL format")
 });
+
+const controlSchema = z.object({
+  type: z.enum(["click", "type", "scroll"]),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  text: z.string().optional(),
+  deltaY: z.number().optional()
+});
+
+// WebSocket message handler for browser control
+export function handleBrowserWebSocket(ws: WebSocket) {
+  console.log("Browser control WebSocket connected");
+  streamingSockets.add(ws);
+
+  ws.on('message', async (data) => {
+    try {
+      const message = JSON.parse(data.toString());
+      
+      if (message.type === 'browser_control' && testPage && isConnected) {
+        const { action } = message;
+        
+        switch (action.type) {
+          case 'click':
+            await testPage.mouse.click(action.x, action.y);
+            console.log(`Browser click at ${action.x}, ${action.y}`);
+            break;
+            
+          case 'type':
+            await testPage.keyboard.type(action.text);
+            console.log(`Browser type: ${action.text}`);
+            break;
+            
+          case 'scroll':
+            await testPage.mouse.wheel({ deltaY: action.deltaY });
+            console.log(`Browser scroll: ${action.deltaY}`);
+            break;
+        }
+      }
+    } catch (error) {
+      console.error('WebSocket message handling error:', error);
+    }
+  });
+
+  ws.on('close', () => {
+    console.log("Browser control WebSocket disconnected");
+    streamingSockets.delete(ws);
+  });
+}
+
+// Start live streaming
+async function startScreenStreaming() {
+  if (!testPage || !testClient || isStreaming) return;
+
+  try {
+    console.log("Starting live screen streaming...");
+    
+    await testClient.send('Page.startScreencast', {
+      format: 'jpeg',
+      quality: 80,
+      maxWidth: 1280,
+      maxHeight: 720,
+      everyNthFrame: 1
+    });
+
+    testClient.on('Page.screencastFrame', (params: any) => {
+      // Broadcast frame to all connected WebSocket clients
+      const frameMessage = JSON.stringify({
+        type: 'browser_frame',
+        data: params.data,
+        metadata: {
+          sessionId: params.sessionId,
+          timestamp: Date.now()
+        }
+      });
+
+      streamingSockets.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(frameMessage);
+        }
+      });
+
+      // Acknowledge frame
+      testClient.send('Page.screencastFrameAck', {
+        sessionId: params.sessionId
+      });
+    });
+
+    isStreaming = true;
+    console.log("Live streaming started successfully");
+    
+  } catch (error) {
+    console.error("Failed to start streaming:", error);
+  }
+}
+
+// Stop live streaming
+async function stopScreenStreaming() {
+  if (!testClient || !isStreaming) return;
+
+  try {
+    await testClient.send('Page.stopScreencast');
+    isStreaming = false;
+    console.log("Live streaming stopped");
+  } catch (error) {
+    console.error("Failed to stop streaming:", error);
+  }
+}
 
 // Test browser connection
 router.post("/test-connection", async (req, res) => {
@@ -50,6 +161,9 @@ router.post("/test-connection", async (req, res) => {
     // Set user agent to look more natural
     await testPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
     
+    // Create CDP client for live streaming
+    testClient = await testPage.target().createCDPSession();
+    
     console.log("Browser connected successfully");
     isConnected = true;
 
@@ -65,6 +179,7 @@ router.post("/test-connection", async (req, res) => {
     isConnected = false;
     testBrowser = null;
     testPage = null;
+    testClient = null;
     
     res.status(500).json({
       success: false,
@@ -121,7 +236,115 @@ router.post("/navigate", async (req, res) => {
   }
 });
 
-// Take screenshot
+// Start live streaming
+router.post("/start-streaming", async (req, res) => {
+  try {
+    if (!testPage || !isConnected) {
+      return res.status(400).json({
+        success: false,
+        message: "No active browser session. Please test connection first."
+      });
+    }
+
+    if (isStreaming) {
+      return res.json({
+        success: true,
+        message: "Live streaming already active",
+        isStreaming: true
+      });
+    }
+
+    await startScreenStreaming();
+
+    res.json({
+      success: true,
+      message: "Live streaming started",
+      isStreaming: true
+    });
+
+  } catch (error: any) {
+    console.error("Start streaming error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to start live streaming",
+      error: error.message
+    });
+  }
+});
+
+// Stop live streaming
+router.post("/stop-streaming", async (req, res) => {
+  try {
+    await stopScreenStreaming();
+
+    res.json({
+      success: true,
+      message: "Live streaming stopped",
+      isStreaming: false
+    });
+
+  } catch (error: any) {
+    console.error("Stop streaming error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to stop live streaming",
+      error: error.message
+    });
+  }
+});
+
+// Manual browser control endpoint
+router.post("/control", async (req, res) => {
+  try {
+    const action = controlSchema.parse(req.body);
+    
+    if (!testPage || !isConnected) {
+      return res.status(400).json({
+        success: false,
+        message: "No active browser session. Please test connection first."
+      });
+    }
+
+    switch (action.type) {
+      case 'click':
+        if (action.x !== undefined && action.y !== undefined) {
+          await testPage.mouse.click(action.x, action.y);
+          console.log(`Manual click at ${action.x}, ${action.y}`);
+        }
+        break;
+        
+      case 'type':
+        if (action.text) {
+          await testPage.keyboard.type(action.text);
+          console.log(`Manual type: ${action.text}`);
+        }
+        break;
+        
+      case 'scroll':
+        if (action.deltaY !== undefined) {
+          await testPage.mouse.wheel({ deltaY: action.deltaY });
+          console.log(`Manual scroll: ${action.deltaY}`);
+        }
+        break;
+    }
+
+    res.json({
+      success: true,
+      message: `${action.type} action executed`,
+      action
+    });
+
+  } catch (error: any) {
+    console.error("Control action error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to execute control action",
+      error: error.message
+    });
+  }
+});
+
+// Take screenshot (keep for fallback)
 router.get("/screenshot", async (req, res) => {
   try {
     if (!testPage || !isConnected) {
@@ -240,9 +463,11 @@ router.get("/status", async (req, res) => {
     res.json({
       success: true,
       isConnected,
+      isStreaming,
       currentUrl,
       title,
       browserEndpoint: BROWSER_ENDPOINT ? BROWSER_ENDPOINT.substring(0, 50) + "..." : null,
+      connectedClients: streamingSockets.size,
       timestamp: new Date().toISOString()
     });
 
@@ -261,6 +486,9 @@ router.delete("/session", async (req, res) => {
   try {
     console.log("Closing browser session...");
     
+    // Stop streaming first
+    await stopScreenStreaming();
+    
     if (testBrowser) {
       await testBrowser.close();
       console.log("Browser session closed");
@@ -268,7 +496,11 @@ router.delete("/session", async (req, res) => {
     
     testBrowser = null;
     testPage = null;
+    testClient = null;
     isConnected = false;
+    
+    // Clear all WebSocket connections
+    streamingSockets.clear();
 
     res.json({
       success: true,

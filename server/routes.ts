@@ -1,11 +1,12 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { WebSocketServer } from "ws";
 import { storage } from "./storage";
 import { authRoutes } from "./routes/auth";
 import { automationRoutes } from "./routes/automations";
 import { browserRoutes } from "./routes/browser";
 import { aiRoutes } from "./routes/ai";
-import testBrowserRoutes from "./routes/test-browser";
+import testBrowserRoutes, { handleBrowserWebSocket } from "./routes/test-browser";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes for wallet authentication
