@@ -243,11 +243,24 @@ export default function PhantomLogin({ isOpen, onClose, onSuccess }: PhantomLogi
           </p>
           {step === 'invitation' && (
             <div className="mt-4 p-3 bg-[hsl(0,0%,18%)]/50 rounded-lg border border-[hsl(263,70%,50%)]/20">
-              <p className="text-gray-400 text-xs mb-2">Demo Codes (for testing):</p>
-              <div className="flex flex-wrap gap-2 justify-center">
-                <code className="text-[hsl(263,70%,50%)] bg-[hsl(0,0%,25%)] px-2 py-1 rounded text-xs">ELITE2024</code>
-                <code className="text-[hsl(187,100%,42%)] bg-[hsl(0,0%,25%)] px-2 py-1 rounded text-xs">STARTER123</code>
-                <code className="text-green-400 bg-[hsl(0,0%,25%)] px-2 py-1 rounded text-xs">FREE2024</code>
+              <p className="text-gray-400 text-xs mb-2">Sample Codes (for testing):</p>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <p className="text-green-400 mb-1">Free (20/day):</p>
+                  <code className="text-green-400 bg-[hsl(0,0%,25%)] px-2 py-1 rounded text-xs">FR33B1X8</code>
+                </div>
+                <div>
+                  <p className="text-[hsl(187,100%,42%)] mb-1">Starter (250/day):</p>
+                  <code className="text-[hsl(187,100%,42%)] bg-[hsl(0,0%,25%)] px-2 py-1 rounded text-xs">STRT2S4P</code>
+                </div>
+                <div>
+                  <p className="text-[hsl(263,70%,50%)] mb-1">Pro (500/day):</p>
+                  <code className="text-[hsl(263,70%,50%)] bg-[hsl(0,0%,25%)] px-2 py-1 rounded text-xs">PROX3N5L</code>
+                </div>
+                <div>
+                  <p className="text-yellow-400 mb-1">Enterprise (1000/day):</p>
+                  <code className="text-yellow-400 bg-[hsl(0,0%,25%)] px-2 py-1 rounded text-xs">ENTP5R8S</code>
+                </div>
               </div>
             </div>
           )}
