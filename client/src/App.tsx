@@ -25,6 +25,7 @@ function Router() {
       <Route path="/dashboard/automations/:id/live" component={LiveAutomation} />
       <Route path="/dashboard/analytics" component={Analytics} />
       <Route path="/dashboard/settings" component={Settings} />
+      <Route path="/dashboard/test-browser" component={TestBrowser} />
       <Route component={NotFound} />
     </Switch>
   );

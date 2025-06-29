@@ -203,6 +203,17 @@ export default function Dashboard() {
               <LifeBuoy className="mr-2 h-4 w-4" />
               Elite Support
             </Button>
+            
+            <Separator className="my-4" />
+            
+            <Button 
+              onClick={() => setLocation("/dashboard/test-browser")}
+              variant="ghost" 
+              className="w-full justify-start text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
+            >
+              <Zap className="mr-2 h-4 w-4" />
+              Browser Test (Debug)
+            </Button>
           </nav>
         </aside>
 
