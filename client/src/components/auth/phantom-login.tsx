@@ -61,25 +61,47 @@ export default function PhantomLogin({ isOpen, onClose, onSuccess }: PhantomLogi
       return;
     }
 
+    if (!publicKey) {
+      toast({
+        title: "Wallet Not Connected",
+        description: "Please connect your wallet first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsValidating(true);
     
     try {
-      // In a real implementation, this would validate the invitation code with the backend
-      // For now, we'll simulate the validation
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      const response = await fetch('/api/auth/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          walletAddress: publicKey,
+          invitationCode: invitationCode.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Validation failed');
+      }
+
       toast({
         title: "Access Granted!",
-        description: "Welcome to the XReplyGuy elite community.",
+        description: data.message || "Welcome to the XReplyGuy elite community.",
       });
       
-      onSuccess?.(publicKey!, invitationCode);
+      onSuccess?.(publicKey, invitationCode);
       onClose();
       resetForm();
-    } catch (error) {
+    } catch (error: any) {
       toast({
-        title: "Invalid Invitation Code",
-        description: "The invitation code you entered is not valid.",
+        title: "Validation Failed",
+        description: error.message || "The invitation code you entered is not valid.",
         variant: "destructive",
       });
     } finally {
@@ -219,6 +241,16 @@ export default function PhantomLogin({ isOpen, onClose, onSuccess }: PhantomLogi
               : 'Don\'t have an invitation code? Contact our team for exclusive access opportunities.'
             }
           </p>
+          {step === 'invitation' && (
+            <div className="mt-4 p-3 bg-[hsl(0,0%,18%)]/50 rounded-lg border border-[hsl(263,70%,50%)]/20">
+              <p className="text-gray-400 text-xs mb-2">Demo Codes (for testing):</p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                <code className="text-[hsl(263,70%,50%)] bg-[hsl(0,0%,25%)] px-2 py-1 rounded text-xs">ELITE2024</code>
+                <code className="text-[hsl(187,100%,42%)] bg-[hsl(0,0%,25%)] px-2 py-1 rounded text-xs">STARTER123</code>
+                <code className="text-green-400 bg-[hsl(0,0%,25%)] px-2 py-1 rounded text-xs">FREE2024</code>
+              </div>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

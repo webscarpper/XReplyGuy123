@@ -7,43 +7,43 @@ import HowItWorksSection from "@/components/sections/how-it-works-section";
 import PricingSection from "@/components/sections/pricing-section";
 import ExclusivitySection from "@/components/sections/exclusivity-section";
 import Footer from "@/components/ui/footer";
-import PhantomWalletModal from "@/components/ui/phantom-wallet-modal";
-import InvitationModal from "@/components/ui/invitation-modal";
+import PhantomLogin from "@/components/auth/phantom-login";
 import { useState } from "react";
 
 export default function LandingPage() {
-  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  const handleLoginSuccess = (walletAddress: string, invitationCode?: string) => {
+    console.log('Login successful:', { walletAddress, invitationCode });
+    // Here you would typically store user data in context/state
+    // and redirect to the dashboard or show success message
+  };
 
   return (
     <div className="min-h-screen bg-[hsl(0,0%,4%)] text-white overflow-x-hidden">
       <Navigation 
-        onWalletConnect={() => setIsWalletModalOpen(true)}
-        onInviteClick={() => setIsInviteModalOpen(true)}
+        onWalletConnect={() => setIsLoginModalOpen(true)}
+        onInviteClick={() => setIsLoginModalOpen(true)}
       />
       
       <HeroSection 
-        onWalletConnect={() => setIsWalletModalOpen(true)}
-        onInviteClick={() => setIsInviteModalOpen(true)}
+        onWalletConnect={() => setIsLoginModalOpen(true)}
+        onInviteClick={() => setIsLoginModalOpen(true)}
       />
       
       <AuthoritySection />
       <FeaturesSection />
       <SocialProofSection />
       <HowItWorksSection />
-      <PricingSection onWalletConnect={() => setIsWalletModalOpen(true)} />
-      <ExclusivitySection onWalletConnect={() => setIsWalletModalOpen(true)} />
+      <PricingSection onWalletConnect={() => setIsLoginModalOpen(true)} />
+      <ExclusivitySection onWalletConnect={() => setIsLoginModalOpen(true)} />
       
       <Footer />
       
-      <PhantomWalletModal 
-        isOpen={isWalletModalOpen}
-        onClose={() => setIsWalletModalOpen(false)}
-      />
-      
-      <InvitationModal 
-        isOpen={isInviteModalOpen}
-        onClose={() => setIsInviteModalOpen(false)}
+      <PhantomLogin 
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={handleLoginSuccess}
       />
     </div>
   );

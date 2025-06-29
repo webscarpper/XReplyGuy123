@@ -123,4 +123,45 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// Initialize sample invitation codes (for demo purposes)
+router.post('/init-codes', async (req, res) => {
+  try {
+    const sampleCodes = [
+      { code: 'ELITE2024', tier: 'pro', actionsPerDay: 500 },
+      { code: 'STARTER123', tier: 'starter', actionsPerDay: 250 },
+      { code: 'ADVANCED99', tier: 'advanced', actionsPerDay: 750 },
+      { code: 'ENTERPRISE1', tier: 'enterprise', actionsPerDay: 1000 },
+      { code: 'FREE2024', tier: 'free', actionsPerDay: 20 },
+    ];
+
+    const createdCodes = [];
+    for (const codeData of sampleCodes) {
+      try {
+        // Check if code already exists
+        const existingCode = await storage.getInvitationCode(codeData.code);
+        if (!existingCode) {
+          const newCode = await storage.createInvitationCode(codeData);
+          createdCodes.push(newCode);
+        }
+      } catch (error) {
+        // Code might already exist, continue
+        console.log(`Code ${codeData.code} already exists or failed to create`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Initialized ${createdCodes.length} invitation codes`,
+      codes: sampleCodes.map(c => ({ code: c.code, tier: c.tier }))
+    });
+
+  } catch (error) {
+    console.error('Init codes error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to initialize codes' 
+    });
+  }
+});
+
 export { router as authRoutes };
