@@ -166,24 +166,40 @@ export default function Dashboard() {
         {/* Sidebar */}
         <aside className="w-64 bg-[hsl(0,0%,6%)] border-r border-[hsl(0,0%,20%)] h-[calc(100vh-81px)]">
           <nav className="p-4 space-y-2">
-            <Button variant="ghost" className="w-full justify-start bg-[hsl(263,70%,50%)]/10 text-[hsl(263,70%,50%)]">
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start bg-[hsl(263,70%,50%)]/10 text-[hsl(263,70%,50%)]"
+              onClick={() => window.location.href = '/dashboard'}
+            >
               <Activity className="mr-2 h-4 w-4" />
               Dashboard
             </Button>
-            <Button variant="ghost" className="w-full justify-start text-gray-400 hover:text-white">
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start text-gray-400 hover:text-white"
+              onClick={() => window.location.href = '/dashboard/automations'}
+            >
               <Bot className="mr-2 h-4 w-4" />
               Automations
             </Button>
-            <Button variant="ghost" className="w-full justify-start text-gray-400 hover:text-white">
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start text-gray-400 hover:text-white"
+              onClick={() => window.location.href = '/dashboard/analytics'}
+            >
               <BarChart3 className="mr-2 h-4 w-4" />
               Analytics
             </Button>
             <Separator className="my-4 bg-[hsl(0,0%,20%)]" />
-            <Button variant="ghost" className="w-full justify-start text-gray-400 hover:text-white">
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start text-gray-400 hover:text-white"
+              onClick={() => window.location.href = '/dashboard/settings'}
+            >
               <Settings className="mr-2 h-4 w-4" />
               Account Settings
             </Button>
-            <Button variant="ghost" className="w-full justify-start text-gray-400 hover:text-white">
+            <Button variant="ghost" className="w-full justify-start text-gray-400 hover:text-white" disabled>
               <LifeBuoy className="mr-2 h-4 w-4" />
               Elite Support
             </Button>
@@ -267,7 +283,7 @@ export default function Dashboard() {
               <CardContent className="space-y-2">
                 <Button 
                   className="w-full bg-[hsl(263,70%,50%)] hover:bg-[hsl(263,70%,60%)] text-white"
-                  disabled
+                  onClick={() => window.location.href = '/dashboard/create-automation'}
                 >
                   <Zap className="mr-2 h-4 w-4" />
                   Create Automation
@@ -275,10 +291,10 @@ export default function Dashboard() {
                 <Button 
                   variant="outline" 
                   className="w-full border-[hsl(0,0%,30%)] hover:bg-[hsl(0,0%,10%)]"
-                  disabled
+                  onClick={() => window.location.href = '/dashboard/automations'}
                 >
                   <Users className="mr-2 h-4 w-4" />
-                  View Live Sessions
+                  View Automations
                 </Button>
               </CardContent>
             </Card>

@@ -96,6 +96,31 @@ This is a modern Web3-first landing page application for "XReplyGuy by Trendify"
 - `DATABASE_URL`: PostgreSQL connection string
 - `NODE_ENV`: Environment specification (development/production)
 
+## Complete Dashboard Structure
+
+### Page Routes
+- `/` - Landing page with Phantom wallet authentication
+- `/dashboard` - Main command center dashboard
+- `/dashboard/create-automation` - 4-step automation wizard
+- `/dashboard/automations` - List of user's automations
+- `/dashboard/automations/:id` - Individual automation details
+- `/dashboard/automations/:id/live` - Live automation monitoring
+- `/dashboard/analytics` - Performance analytics dashboard
+- `/dashboard/settings` - Account settings and preferences
+
+### API Routes
+- `/api/auth/*` - Authentication and user management
+- `/api/automations/*` - CRUD operations for automations
+- `/api/bright-data/*` - Browser session management
+- `/api/ai/*` - AI reply generation and analysis
+
+### Database Schema
+- `users` - User accounts with wallet authentication
+- `invitation_codes` - Tier-specific access codes
+- `automations` - User automation configurations
+- `automation_actions` - Action history and tracking
+- `browser_sessions` - Live browser session management
+
 ## Changelog
 
 ```
@@ -105,6 +130,7 @@ Changelog:
 - June 29, 2025. Implemented complete Phantom wallet authentication with 50 tier-specific invitation codes
 - June 29, 2025. Added wallet address binding system - each invitation code locks to first wallet used
 - June 29, 2025. Created Command Center dashboard with real user data integration and subscription management
+- June 29, 2025. Built complete page structure with automation wizard, analytics, settings, and live monitoring
 ```
 
 ## User Preferences
