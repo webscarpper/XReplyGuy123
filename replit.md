@@ -134,6 +134,7 @@ Changelog:
 - June 29, 2025. Added navigation back buttons throughout dashboard and automation delete functionality
 - June 29, 2025. Configured Bright Data integration with browser automation credentials and tested session creation
 - June 29, 2025. Built comprehensive browser test page with live automation verification - Bright Data integration confirmed working
+- June 29, 2025. Upgraded browser test page with live streaming (20+ FPS) and real-time manual control via WebSocket - full remote browser interaction ready
 ```
 
 ## User Preferences
