@@ -492,50 +492,51 @@ export default function TestBrowser() {
               >
                 {liveViewUrl ? (
                   <div className="relative">
-                    <iframe
-                      src={liveViewUrl}
-                      width={1400}
-                      height={900}
-                      className="w-full bg-black border-0"
-                      style={{ minHeight: '600px', maxHeight: '80vh' }}
-                      title="Bright Data Live Browser View"
-                      allow="clipboard-read; clipboard-write; camera; microphone; geolocation; fullscreen"
-                      sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-top-navigation allow-downloads"
-                      loading="eager"
-                      onLoad={() => {
-                        console.log('Iframe loaded successfully');
-                        setIframeLoaded(true);
-                        setIframeError(false);
-                      }}
-                      onError={() => {
-                        console.log('Iframe failed to load');
-                        setIframeError(true);
-                        setIframeLoaded(false);
-                      }}
-                    />
-                    <div className="absolute top-2 right-2 bg-green-500/20 border border-green-500 rounded px-2 py-1 text-xs text-green-400">
-                      Live Chrome DevTools
+                    <div className="w-full bg-gray-900 border border-[hsl(0,0%,25%)] rounded-lg p-8 text-center" style={{ minHeight: '600px' }}>
+                      <Monitor className="h-16 w-16 mx-auto mb-4 text-blue-400" />
+                      <h3 className="text-xl font-semibold mb-4 text-white">Chrome DevTools Available</h3>
+                      <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
+                        The live Chrome DevTools interface is ready for full browser control. 
+                        Click the button below to open it in a new window with complete automation capabilities.
+                      </p>
+                      
+                      <Button 
+                        onClick={() => window.open(liveViewUrl, '_blank', 'width=1400,height=900,scrollbars=yes,resizable=yes')}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 text-lg mb-4"
+                        size="lg"
+                      >
+                        <Monitor className="h-5 w-5 mr-2" />
+                        Open Chrome DevTools
+                      </Button>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm">
+                        <div className="bg-blue-500/10 border border-blue-500/30 rounded p-3">
+                          <CheckCircle className="h-5 w-5 mx-auto mb-2 text-blue-400" />
+                          <p className="text-blue-300 font-medium">Full Browser Control</p>
+                          <p className="text-gray-400">Complete Chrome DevTools interface</p>
+                        </div>
+                        <div className="bg-green-500/10 border border-green-500/30 rounded p-3">
+                          <CheckCircle className="h-5 w-5 mx-auto mb-2 text-green-400" />
+                          <p className="text-green-300 font-medium">Live Automation</p>
+                          <p className="text-gray-400">Real-time browser interaction</p>
+                        </div>
+                        <div className="bg-purple-500/10 border border-purple-500/30 rounded p-3">
+                          <CheckCircle className="h-5 w-5 mx-auto mb-2 text-purple-400" />
+                          <p className="text-purple-300 font-medium">Undetectable</p>
+                          <p className="text-gray-400">Bright Data residential IPs</p>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                        <p className="text-yellow-300 text-sm">
+                          <strong>Pro Tip:</strong> Use the Console tab in DevTools to run custom JavaScript automation scripts.
+                        </p>
+                      </div>
                     </div>
                     
-                    {/* Loading/Error overlay */}
-                    {!iframeLoaded && !iframeError && (
-                      <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
-                        <div className="text-center">
-                          <RefreshCw className="h-8 w-8 mx-auto mb-2 animate-spin text-blue-400" />
-                          <p className="text-blue-400">Loading Chrome DevTools...</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {iframeError && (
-                      <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
-                        <div className="text-center">
-                          <XCircle className="h-8 w-8 mx-auto mb-2 text-red-400" />
-                          <p className="text-red-400 mb-2">Failed to load Chrome DevTools</p>
-                          <p className="text-gray-400 text-sm">Falling back to screencast mode...</p>
-                        </div>
-                      </div>
-                    )}
+                    <div className="absolute top-2 right-2 bg-green-500/20 border border-green-500 rounded px-2 py-1 text-xs text-green-400">
+                      Live Chrome DevTools Ready
+                    </div>
                   </div>
                 ) : (
                   <canvas
@@ -553,9 +554,14 @@ export default function TestBrowser() {
                 <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                   <div className="flex items-center space-x-4 text-sm text-blue-300">
                     {liveViewUrl ? (
-                      <div className="flex items-center space-x-2">
-                        <Monitor className="h-4 w-4" />
-                        <span>Full browser control available in Chrome DevTools above</span>
+                      <div className="text-center w-full">
+                        <div className="flex items-center justify-center space-x-2 mb-2">
+                          <Monitor className="h-4 w-4" />
+                          <span>Full browser control available in Chrome DevTools window</span>
+                        </div>
+                        <p className="text-xs text-gray-400">
+                          Use the Elements, Console, and Network tabs for complete automation control
+                        </p>
                       </div>
                     ) : (
                       <>

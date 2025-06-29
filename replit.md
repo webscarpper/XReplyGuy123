@@ -138,6 +138,7 @@ Changelog:
 - June 29, 2025. Redesigned browser test page with professional interface, larger 1400x900 viewport, accurate click mapping, and visual feedback - production-ready remote browser control
 - June 29, 2025. Implemented Bright Data's official live view method using Page.inspect command - now displays real Chrome DevTools interface with full native browser control capabilities
 - June 29, 2025. Fixed browser display issues by correcting conditional rendering logic and improved iframe loading with proper error handling and visual feedback
+- June 29, 2025. Resolved CORS restrictions with Chrome DevTools iframe by implementing new window approach - users now get full DevTools interface in popup window for complete browser automation
 ```
 
 ## User Preferences
