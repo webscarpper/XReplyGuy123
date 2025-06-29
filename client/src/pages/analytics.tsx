@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { 
+  ArrowLeft,
   BarChart3,
   TrendingUp,
   Activity,
@@ -14,6 +18,7 @@ import {
 } from "lucide-react";
 
 export default function Analytics() {
+  const [, setLocation] = useLocation();
   const userToken = localStorage.getItem('xreplyguy_wallet');
 
   // Mock analytics data for demo
@@ -37,9 +42,21 @@ export default function Analytics() {
     <div className="min-h-screen bg-[hsl(0,0%,4%)] text-white">
       {/* Header */}
       <header className="border-b border-[hsl(0,0%,20%)] bg-[hsl(0,0%,6%)]">
-        <div className="px-6 py-4">
-          <h1 className="text-2xl font-bold">Analytics Dashboard</h1>
-          <p className="text-gray-400 text-sm">Performance insights and automation metrics</p>
+        <div className="flex items-center space-x-4 px-6 py-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLocation("/dashboard")}
+            className="text-gray-400 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
+          <Separator orientation="vertical" className="h-6" />
+          <div>
+            <h1 className="text-2xl font-bold">Analytics Dashboard</h1>
+            <p className="text-gray-400 text-sm">Performance insights and automation metrics</p>
+          </div>
         </div>
       </header>
 

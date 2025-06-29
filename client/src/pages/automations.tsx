@@ -1,9 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { 
+  ArrowLeft,
   Plus,
   Bot,
   Play,
@@ -51,6 +53,7 @@ const getStatusIcon = (status: string) => {
 export default function Automations() {
   const [, setLocation] = useLocation();
   const userToken = localStorage.getItem('xreplyguy_wallet');
+  const queryClient = useQueryClient();
 
   const { data: automations = [], isLoading, error } = useQuery({
     queryKey: ['/api/automations'],
@@ -89,10 +92,32 @@ export default function Automations() {
       
       if (response.ok) {
         // Refresh the automations list
-        window.location.reload();
+        queryClient.invalidateQueries({ queryKey: ['/api/automations'] });
       }
     } catch (error) {
       console.error(`Failed to ${action} automation:`, error);
+    }
+  };
+
+  const handleDeleteAutomation = async (automationId: number) => {
+    if (!confirm('Are you sure you want to delete this automation? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/automations/${automationId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${userToken}`
+        }
+      });
+      
+      if (response.ok) {
+        // Refresh the automations list
+        queryClient.invalidateQueries({ queryKey: ['/api/automations'] });
+      }
+    } catch (error) {
+      console.error('Failed to delete automation:', error);
     }
   };
 
@@ -112,9 +137,21 @@ export default function Automations() {
       {/* Header */}
       <header className="border-b border-[hsl(0,0%,20%)] bg-[hsl(0,0%,6%)]">
         <div className="flex items-center justify-between px-6 py-4">
-          <div>
-            <h1 className="text-2xl font-bold">Automations</h1>
-            <p className="text-gray-400 text-sm">Manage your Twitter automation fleet</p>
+          <div className="flex items-center space-x-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLocation("/dashboard")}
+              className="text-gray-400 hover:text-white"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Dashboard
+            </Button>
+            <Separator orientation="vertical" className="h-6" />
+            <div>
+              <h1 className="text-2xl font-bold">Automations</h1>
+              <p className="text-gray-400 text-sm">Manage your Twitter automation fleet</p>
+            </div>
           </div>
           
           <Button
@@ -251,6 +288,15 @@ export default function Automations() {
                           Live
                         </Button>
                       )}
+                      
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDeleteAutomation(automation.id)}
+                        className="text-red-400 border-red-400/30 hover:bg-red-500/10"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
 
                     {/* Last Updated */}
