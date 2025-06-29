@@ -131,6 +131,8 @@ Changelog:
 - June 29, 2025. Added wallet address binding system - each invitation code locks to first wallet used
 - June 29, 2025. Created Command Center dashboard with real user data integration and subscription management
 - June 29, 2025. Built complete page structure with automation wizard, analytics, settings, and live monitoring
+- June 29, 2025. Added navigation back buttons throughout dashboard and automation delete functionality
+- June 29, 2025. Configured Bright Data integration with browser automation credentials and tested session creation
 ```
 
 ## User Preferences
