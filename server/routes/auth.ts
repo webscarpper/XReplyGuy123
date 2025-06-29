@@ -133,7 +133,9 @@ router.post('/login', async (req, res) => {
         id: user.id,
         walletAddress: user.walletAddress,
         tier: user.tier,
-        actionsPerDay: user.actionsPerDay,
+        dailyLimit: user.dailyLimit,
+        usageToday: user.usageToday,
+        subscriptionExpires: user.subscriptionExpires,
       },
       message: 'Welcome back to XReplyGuy!'
     });
@@ -251,6 +253,58 @@ router.post('/init-codes', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to initialize codes' 
+    });
+  }
+});
+
+// Get user data for dashboard
+router.get('/me', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'No valid authorization token provided'
+      });
+    }
+
+    // Extract wallet address from the token (simplified for demo)
+    const walletAddress = authHeader.replace('Bearer ', '');
+    
+    const user = await storage.getUserByWalletAddress(walletAddress);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if subscription is still valid
+    const now = new Date();
+    const isExpired = user.subscriptionExpires < now;
+    
+    // Calculate days remaining
+    const daysRemaining = Math.max(0, Math.ceil((user.subscriptionExpires.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        walletAddress: user.walletAddress,
+        tier: user.tier,
+        dailyLimit: user.dailyLimit,
+        usageToday: user.usageToday,
+        subscriptionExpires: user.subscriptionExpires,
+        daysRemaining,
+        isExpired,
+      }
+    });
+
+  } catch (error) {
+    console.error('Get user data error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
     });
   }
 });

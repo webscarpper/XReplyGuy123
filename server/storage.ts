@@ -6,6 +6,8 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByWalletAddress(walletAddress: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserUsage(userId: number, usageToday: number): Promise<void>;
+  resetDailyUsage(): Promise<void>;
   getInvitationCode(code: string): Promise<InvitationCode | undefined>;
   createInvitationCode(inviteCode: InsertInvitationCode): Promise<InvitationCode>;
   markInvitationCodeAsUsed(code: string, userId: number): Promise<void>;
@@ -48,6 +50,19 @@ export class DatabaseStorage implements IStorage {
       .update(invitationCodes)
       .set({ isUsed: true, usedByUserId: userId })
       .where(eq(invitationCodes.code, code));
+  }
+
+  async updateUserUsage(userId: number, usageToday: number): Promise<void> {
+    await db
+      .update(users)
+      .set({ usageToday })
+      .where(eq(users.id, userId));
+  }
+
+  async resetDailyUsage(): Promise<void> {
+    await db
+      .update(users)
+      .set({ usageToday: 0 });
   }
 }
 
