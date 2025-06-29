@@ -1,0 +1,55 @@
+COMMAND CENTER LAYOUT (BASIC STRUCTURE ONLY):
+HEADER:
+XReplyGuy logo (left)
+User info: Tier badge + wallet address (truncated)
+Subscription status: "X days remaining"
+Emergency stop button (right)
+SIDEBAR NAVIGATION:
+Dashboard (current page)
+Automations
+Analytics
+Account Settings
+Elite Support
+Logout
+MAIN CONTENT AREA:
+Welcome message with real user tier
+Account status card (real subscription data)
+Usage today: "X/XXX actions used" (real data from database)
+Quick action buttons (create automation, view live sessions)
+Empty state message: "No active automations yet"
+CRITICAL REQUIREMENTS:
+NO MOCKUP DATA:
+All user information must be REAL from database
+Tier, daily limits, usage - everything from actual user record
+Subscription expiry dates must be calculated from database
+NO hardcoded or fake data anywhere
+USER DATA DISPLAY:
+Show actual tier from invitation code used
+Display real daily limits based on tier
+Show actual subscription expiry date
+Display real usage statistics
+AUTHENTICATION VERIFICATION:
+Verify user is properly authenticated before showing dashboard
+Redirect to login if no valid session
+Load user data from database on page load
+Handle expired subscriptions gracefully
+DESIGN REQUIREMENTS:
+Match the dark, elite aesthetic from landing page
+Use same color scheme (dark theme with neon accents)
+Military/command center terminology
+Premium, exclusive feel
+Responsive design
+Clean, professional layout
+TECHNICAL SETUP:
+Create dashboard route (/dashboard)
+Add authentication middleware
+Create user data loading functions
+Set up real-time user info display
+Prepare for future automation features
+IMPORTANT NOTES:
+This is just the BASIC LAYOUT and user logic
+DO NOT implement automation features yet
+Focus on getting user creation/login logic perfect
+Ensure all displayed data is real from database
+Prepare structure for future features but don't build them yet
+Create a solid foundation that properly handles user accounts and displays real user information from the database.

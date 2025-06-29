@@ -36,7 +36,9 @@ router.post('/validate', async (req, res) => {
             id: existingUser.id,
             walletAddress: existingUser.walletAddress,
             tier: existingUser.tier,
-            actionsPerDay: existingUser.actionsPerDay
+            dailyLimit: existingUser.dailyLimit,
+            usageToday: existingUser.usageToday,
+            subscriptionExpires: existingUser.subscriptionExpires
           }
         });
       } else {
@@ -58,11 +60,18 @@ router.post('/validate', async (req, res) => {
     }
 
     // Create new user and bind the invitation code to this wallet
+    const subscriptionExpires = new Date();
+    subscriptionExpires.setDate(subscriptionExpires.getDate() + 30); // 30 days from now
+
     const newUser = await storage.createUser({
       walletAddress,
       invitationCode,
       tier: inviteCode.tier,
-      actionsPerDay: inviteCode.actionsPerDay,
+      dailyLimit: inviteCode.actionsPerDay,
+      usageToday: 0,
+      subscriptionStartDate: new Date(),
+      subscriptionExpires,
+      isActive: true,
     });
 
     // Mark invitation code as used and bind to this user
@@ -75,7 +84,9 @@ router.post('/validate', async (req, res) => {
         id: newUser.id,
         walletAddress: newUser.walletAddress,
         tier: newUser.tier,
-        actionsPerDay: newUser.actionsPerDay,
+        dailyLimit: newUser.dailyLimit,
+        usageToday: newUser.usageToday,
+        subscriptionExpires: newUser.subscriptionExpires,
       }
     });
 

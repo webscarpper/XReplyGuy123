@@ -8,7 +8,10 @@ export const users = pgTable("users", {
   walletAddress: text("wallet_address").notNull().unique(),
   invitationCode: text("invitation_code"),
   tier: text("tier").notNull().default("free"),
-  actionsPerDay: integer("actions_per_day").notNull().default(20),
+  dailyLimit: integer("daily_limit").notNull().default(20),
+  usageToday: integer("usage_today").notNull().default(0),
+  subscriptionStartDate: timestamp("subscription_start_date").defaultNow().notNull(),
+  subscriptionExpires: timestamp("subscription_expires").notNull(),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -41,7 +44,11 @@ export const insertUserSchema = createInsertSchema(users).pick({
   walletAddress: true,
   invitationCode: true,
   tier: true,
-  actionsPerDay: true,
+  dailyLimit: true,
+  usageToday: true,
+  subscriptionStartDate: true,
+  subscriptionExpires: true,
+  isActive: true,
 });
 
 export const insertInvitationCodeSchema = createInsertSchema(invitationCodes).pick({
