@@ -112,9 +112,21 @@ export default function Settings() {
     <div className="min-h-screen bg-[hsl(0,0%,4%)] text-white">
       {/* Header */}
       <header className="border-b border-[hsl(0,0%,20%)] bg-[hsl(0,0%,6%)]">
-        <div className="px-6 py-4">
-          <h1 className="text-2xl font-bold">Account Settings</h1>
-          <p className="text-gray-400 text-sm">Manage your account preferences and subscription</p>
+        <div className="flex items-center space-x-4 px-6 py-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLocation("/dashboard")}
+            className="text-gray-400 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
+          <Separator orientation="vertical" className="h-6" />
+          <div>
+            <h1 className="text-2xl font-bold">Account Settings</h1>
+            <p className="text-gray-400 text-sm">Manage your account preferences and subscription</p>
+          </div>
         </div>
       </header>
 

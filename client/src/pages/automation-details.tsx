@@ -119,6 +119,27 @@ export default function AutomationDetails() {
     }
   };
 
+  const handleDeleteAutomation = async () => {
+    if (!confirm('Are you sure you want to delete this automation? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/automations/${automationId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${userToken}`
+        }
+      });
+      
+      if (response.ok) {
+        setLocation('/dashboard/automations');
+      }
+    } catch (error) {
+      console.error('Failed to delete automation:', error);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[hsl(0,0%,4%)] text-white flex items-center justify-center">
@@ -212,7 +233,12 @@ export default function AutomationDetails() {
               Edit
             </Button>
             
-            <Button size="sm" variant="outline" className="text-red-400 border-red-400/30" disabled>
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="text-red-400 border-red-400/30 hover:bg-red-500/10"
+              onClick={handleDeleteAutomation}
+            >
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
