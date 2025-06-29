@@ -44,15 +44,16 @@ export default function TestBrowser() {
   const [, setLocation] = useLocation();
   const [status, setStatus] = useState<BrowserStatus>({ isConnected: false });
   const [loading, setLoading] = useState(false);
-  const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const [screenshot, setScreenshot] = useState<string | null>(null);
   const [navigateUrl, setNavigateUrl] = useState("https://twitter.com");
-  const [autoRefresh, setAutoRefresh] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [manualControlEnabled, setManualControlEnabled] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [liveFrame, setLiveFrame] = useState<string | null>(null);
+  const [clickFeedback, setClickFeedback] = useState<{x: number, y: number} | null>(null);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   const userToken = localStorage.getItem('xreplyguy_wallet');
 

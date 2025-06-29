@@ -45,10 +45,28 @@ export function handleBrowserWebSocket(ws: WebSocket) {
       if (message.type === 'browser_control' && testPage && isConnected) {
         const { action } = message;
         
+        // Check if browser session is still active
+        try {
+          await testPage.evaluate(() => window.location.href);
+        } catch (error: any) {
+          console.log("Browser session lost, skipping control action");
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Browser session lost'
+          }));
+          return;
+        }
+        
         switch (action.type) {
           case 'click':
             await testPage.mouse.click(action.x, action.y);
             console.log(`Browser click at ${action.x}, ${action.y}`);
+            ws.send(JSON.stringify({
+              type: 'control_feedback',
+              action: 'click',
+              x: action.x,
+              y: action.y
+            }));
             break;
             
           case 'type':
@@ -62,8 +80,12 @@ export function handleBrowserWebSocket(ws: WebSocket) {
             break;
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('WebSocket message handling error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        message: error.message
+      }));
     }
   });
 
@@ -82,9 +104,9 @@ async function startScreenStreaming() {
     
     await testClient.send('Page.startScreencast', {
       format: 'jpeg',
-      quality: 80,
-      maxWidth: 1280,
-      maxHeight: 720,
+      quality: 90,
+      maxWidth: 1400,
+      maxHeight: 900,
       everyNthFrame: 1
     });
 
