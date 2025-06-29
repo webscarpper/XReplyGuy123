@@ -39,6 +39,8 @@ export default function TestBrowser() {
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [liveFrame, setLiveFrame] = useState<string | null>(null);
   const [liveViewUrl, setLiveViewUrl] = useState<string | null>(null);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
+  const [iframeError, setIframeError] = useState(false);
   const [clickIndicator, setClickIndicator] = useState<{x: number, y: number, id: number} | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -83,6 +85,8 @@ export default function TestBrowser() {
             setLiveFrame(`data:image/jpeg;base64,${message.data}`);
           } else if (message.type === 'live_view_url') {
             setLiveViewUrl(message.url);
+            setIframeLoaded(false);
+            setIframeError(false);
             console.log('Received live view URL:', message.url);
           } else if (message.type === 'control_feedback') {
             // Show click indicator
@@ -458,7 +462,7 @@ export default function TestBrowser() {
         </div>
 
         {/* Live Browser View */}
-        {liveFrame && (
+        {(liveFrame || liveViewUrl) && (
           <Card className="bg-[hsl(0,0%,8%)] border-[hsl(0,0%,20%)]">
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
@@ -492,14 +496,46 @@ export default function TestBrowser() {
                       src={liveViewUrl}
                       width={1400}
                       height={900}
-                      className="w-full h-auto bg-black"
-                      style={{ maxHeight: '80vh' }}
+                      className="w-full bg-black border-0"
+                      style={{ minHeight: '600px', maxHeight: '80vh' }}
                       title="Bright Data Live Browser View"
-                      allow="clipboard-read; clipboard-write"
+                      allow="clipboard-read; clipboard-write; camera; microphone; geolocation; fullscreen"
+                      sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-top-navigation allow-downloads"
+                      loading="eager"
+                      onLoad={() => {
+                        console.log('Iframe loaded successfully');
+                        setIframeLoaded(true);
+                        setIframeError(false);
+                      }}
+                      onError={() => {
+                        console.log('Iframe failed to load');
+                        setIframeError(true);
+                        setIframeLoaded(false);
+                      }}
                     />
                     <div className="absolute top-2 right-2 bg-green-500/20 border border-green-500 rounded px-2 py-1 text-xs text-green-400">
                       Live Chrome DevTools
                     </div>
+                    
+                    {/* Loading/Error overlay */}
+                    {!iframeLoaded && !iframeError && (
+                      <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
+                        <div className="text-center">
+                          <RefreshCw className="h-8 w-8 mx-auto mb-2 animate-spin text-blue-400" />
+                          <p className="text-blue-400">Loading Chrome DevTools...</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {iframeError && (
+                      <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
+                        <div className="text-center">
+                          <XCircle className="h-8 w-8 mx-auto mb-2 text-red-400" />
+                          <p className="text-red-400 mb-2">Failed to load Chrome DevTools</p>
+                          <p className="text-gray-400 text-sm">Falling back to screencast mode...</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <canvas
@@ -544,7 +580,7 @@ export default function TestBrowser() {
           </Card>
         )}
         
-        {!liveFrame && status.isConnected && (
+        {!liveFrame && !liveViewUrl && status.isConnected && (
           <Card className="bg-[hsl(0,0%,8%)] border-[hsl(0,0%,20%)]">
             <CardContent className="p-8 text-center">
               <Monitor className="h-16 w-16 mx-auto mb-4 text-gray-400" />
