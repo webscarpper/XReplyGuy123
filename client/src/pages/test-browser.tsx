@@ -48,6 +48,11 @@ export default function TestBrowser() {
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [navigateUrl, setNavigateUrl] = useState("https://twitter.com");
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [manualControlEnabled, setManualControlEnabled] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [liveFrame, setLiveFrame] = useState<string | null>(null);
 
   const userToken = localStorage.getItem('xreplyguy_wallet');
 
@@ -59,7 +64,59 @@ export default function TestBrowser() {
   // Check status on component mount
   useEffect(() => {
     checkStatus();
+    setupWebSocket();
+    
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+    };
   }, []);
+
+  // Setup WebSocket connection for live streaming
+  const setupWebSocket = () => {
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/browser`;
+      
+      const websocket = new WebSocket(wsUrl);
+      
+      websocket.onopen = () => {
+        console.log('Browser WebSocket connected');
+        setWsConnected(true);
+        setWs(websocket);
+      };
+      
+      websocket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          
+          if (message.type === 'browser_frame') {
+            // Update live frame
+            setLiveFrame(`data:image/jpeg;base64,${message.data}`);
+          }
+        } catch (error) {
+          console.error('WebSocket message error:', error);
+        }
+      };
+      
+      websocket.onclose = () => {
+        console.log('Browser WebSocket disconnected');
+        setWsConnected(false);
+        setWs(null);
+        
+        // Reconnect after 3 seconds
+        setTimeout(setupWebSocket, 3000);
+      };
+      
+      websocket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+      
+    } catch (error) {
+      console.error('WebSocket setup error:', error);
+    }
+  };
 
   // Auto-refresh screenshot every 5 seconds when enabled
   useEffect(() => {
@@ -194,6 +251,113 @@ export default function TestBrowser() {
     }
   };
 
+  const startStreaming = async () => {
+    setLoading(true);
+    
+    try {
+      const result = await apiRequest('/start-streaming', { method: 'POST' });
+      setTestResult(result);
+      
+      if (result.success) {
+        setIsStreaming(true);
+        setLiveFrame(null); // Clear old frame
+      }
+    } catch (error: any) {
+      setTestResult({
+        success: false,
+        message: 'Start streaming failed',
+        error: error.message
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const stopStreaming = async () => {
+    setLoading(true);
+    
+    try {
+      const result = await apiRequest('/stop-streaming', { method: 'POST' });
+      setTestResult(result);
+      
+      if (result.success) {
+        setIsStreaming(false);
+        setLiveFrame(null);
+      }
+    } catch (error: any) {
+      setTestResult({
+        success: false,
+        message: 'Stop streaming failed',
+        error: error.message
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCanvasClick = async (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!manualControlEnabled || !status.isConnected) return;
+    
+    const canvas = event.currentTarget;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.round((event.clientX - rect.left) * (1280 / rect.width));
+    const y = Math.round((event.clientY - rect.top) * (720 / rect.height));
+    
+    try {
+      await apiRequest('/control', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'click',
+          x,
+          y
+        })
+      });
+      
+      console.log(`Manual click at ${x}, ${y}`);
+    } catch (error) {
+      console.error('Manual click failed:', error);
+    }
+  };
+
+  const handleKeyPress = async (event: React.KeyboardEvent) => {
+    if (!manualControlEnabled || !status.isConnected) return;
+    
+    // Only handle visible characters, ignore special keys
+    if (event.key.length === 1) {
+      try {
+        await apiRequest('/control', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'type',
+            text: event.key
+          })
+        });
+        
+        console.log(`Manual type: ${event.key}`);
+      } catch (error) {
+        console.error('Manual type failed:', error);
+      }
+    }
+  };
+
+  const handleScroll = async (deltaY: number) => {
+    if (!manualControlEnabled || !status.isConnected) return;
+    
+    try {
+      await apiRequest('/control', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'scroll',
+          deltaY
+        })
+      });
+      
+      console.log(`Manual scroll: ${deltaY}`);
+    } catch (error) {
+      console.error('Manual scroll failed:', error);
+    }
+  };
+
   const closeSession = async () => {
     setLoading(true);
     
@@ -201,6 +365,9 @@ export default function TestBrowser() {
       const result = await apiRequest('/session', { method: 'DELETE' });
       setTestResult(result);
       setScreenshot(null);
+      setLiveFrame(null);
+      setIsStreaming(false);
+      setManualControlEnabled(false);
       setAutoRefresh(false);
       await checkStatus();
     } catch (error: any) {
@@ -261,6 +428,19 @@ export default function TestBrowser() {
                   Endpoint: {status.browserEndpoint}
                 </span>
               )}
+              
+              <Badge variant={wsConnected ? "default" : "secondary"} className="flex items-center space-x-2">
+                {wsConnected ? (
+                  <CheckCircle className="h-4 w-4" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
+                <span>WebSocket {wsConnected ? "Connected" : "Disconnected"}</span>
+              </Badge>
+              
+              <Badge variant={isStreaming ? "default" : "secondary"} className="flex items-center space-x-2">
+                <span>Live Stream {isStreaming ? "Active" : "Inactive"}</span>
+              </Badge>
             </div>
             
             {status.currentUrl && (
@@ -360,6 +540,20 @@ export default function TestBrowser() {
               </Button>
               
               <Button 
+                onClick={isStreaming ? stopStreaming : startStreaming} 
+                disabled={loading || !status.isConnected}
+                variant={isStreaming ? "destructive" : "default"}
+                className="w-full"
+              >
+                {isStreaming ? (
+                  <Square className="h-4 w-4 mr-2" />
+                ) : (
+                  <Play className="h-4 w-4 mr-2" />
+                )}
+                {isStreaming ? "Stop Live Stream" : "Start Live Stream"}
+              </Button>
+              
+              <Button 
                 onClick={takeScreenshot} 
                 disabled={loading || !status.isConnected}
                 variant="outline"
@@ -372,16 +566,24 @@ export default function TestBrowser() {
               <div className="flex items-center space-x-2">
                 <input
                   type="checkbox"
-                  id="autoRefresh"
-                  checked={autoRefresh}
-                  onChange={(e) => setAutoRefresh(e.target.checked)}
+                  id="manualControl"
+                  checked={manualControlEnabled}
+                  onChange={(e) => setManualControlEnabled(e.target.checked)}
                   disabled={!status.isConnected}
                   className="rounded"
                 />
-                <Label htmlFor="autoRefresh" className="text-sm">
-                  Auto-refresh screenshots (5s)
+                <Label htmlFor="manualControl" className="text-sm">
+                  Manual Control (Click & Type)
                 </Label>
               </div>
+              
+              {manualControlEnabled && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+                  <p className="text-xs text-yellow-300">
+                    Manual control enabled: Click on browser view to interact, type to send keys, scroll with mouse wheel
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -424,29 +626,72 @@ export default function TestBrowser() {
           </Card>
         )}
 
-        {/* Screenshot Display */}
-        {screenshot && (
+        {/* Live Browser View */}
+        {(liveFrame || screenshot) && (
           <Card className="bg-[hsl(0,0%,8%)] border-[hsl(0,0%,20%)]">
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
-                <Camera className="h-5 w-5" />
-                <span>Live Browser View</span>
-                {autoRefresh && (
-                  <Badge variant="outline" className="ml-2">
-                    Auto-refreshing
+                <Monitor className="h-5 w-5" />
+                <span>{isStreaming ? "Live Browser Stream" : "Browser Screenshot"}</span>
+                {isStreaming && (
+                  <Badge variant="default" className="ml-2 bg-green-500">
+                    Live
+                  </Badge>
+                )}
+                {manualControlEnabled && (
+                  <Badge variant="outline" className="ml-2 text-yellow-400 border-yellow-400">
+                    Manual Control ON
                   </Badge>
                 )}
               </CardTitle>
-              <CardDescription>Current browser screenshot</CardDescription>
+              <CardDescription>
+                {isStreaming 
+                  ? "Real-time browser view - click to interact when manual control is enabled"
+                  : "Static browser screenshot"
+                }
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="border border-[hsl(0,0%,25%)] rounded-lg overflow-hidden">
-                <img 
-                  src={screenshot} 
-                  alt="Browser Screenshot" 
-                  className="w-full h-auto max-h-[600px] object-contain"
+              <div 
+                className={`border border-[hsl(0,0%,25%)] rounded-lg overflow-hidden ${
+                  manualControlEnabled ? 'cursor-crosshair' : 'cursor-default'
+                }`}
+                tabIndex={manualControlEnabled ? 0 : -1}
+                onKeyDown={manualControlEnabled ? handleKeyPress : undefined}
+                onWheel={manualControlEnabled ? (e) => handleScroll(e.deltaY) : undefined}
+              >
+                <canvas
+                  width={1280}
+                  height={720}
+                  onClick={manualControlEnabled ? handleCanvasClick : undefined}
+                  className="w-full h-auto max-h-[600px] object-contain bg-black"
+                  ref={(canvas) => {
+                    if (canvas && (liveFrame || screenshot)) {
+                      const ctx = canvas.getContext('2d');
+                      const img = new Image();
+                      img.onload = () => {
+                        ctx?.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                      };
+                      img.src = liveFrame || screenshot || '';
+                    }
+                  }}
                 />
               </div>
+              
+              {manualControlEnabled && (
+                <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <div className="text-sm text-blue-300 space-y-1">
+                    <p><strong>Manual Control Active:</strong></p>
+                    <ul className="list-disc list-inside space-y-1 text-xs">
+                      <li>Click anywhere on the browser view to send clicks</li>
+                      <li>Focus the view and type to send keystrokes</li>
+                      <li>Scroll with mouse wheel over the browser view</li>
+                      <li>All actions are sent in real-time to the remote browser</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

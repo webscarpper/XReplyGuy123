@@ -26,5 +26,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
 
+  // Set up WebSocket server for browser streaming
+  const wss = new WebSocketServer({ 
+    server: httpServer,
+    path: '/ws/browser'
+  });
+
+  wss.on('connection', (ws, req) => {
+    console.log('WebSocket connection established:', req.url);
+    
+    if (req.url === '/ws/browser') {
+      handleBrowserWebSocket(ws);
+    }
+  });
+
   return httpServer;
 }
