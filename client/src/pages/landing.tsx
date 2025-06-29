@@ -15,8 +15,10 @@ export default function LandingPage() {
 
   const handleLoginSuccess = (walletAddress: string, invitationCode?: string) => {
     console.log('Login successful:', { walletAddress, invitationCode });
-    // Here you would typically store user data in context/state
-    // and redirect to the dashboard or show success message
+    // Store wallet address for authentication
+    localStorage.setItem('xreplyguy_wallet', walletAddress);
+    // Redirect to dashboard
+    window.location.href = '/dashboard';
   };
 
   return (
