@@ -9,6 +9,15 @@ import { aiRoutes } from "./routes/ai";
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes for wallet authentication
   app.use("/api/auth", authRoutes);
+  
+  // Automation management routes
+  app.use("/api/automations", automationRoutes);
+  
+  // Browser session management routes
+  app.use("/api/bright-data", browserRoutes);
+  
+  // AI integration routes
+  app.use("/api/ai", aiRoutes);
 
   const httpServer = createServer(app);
 
