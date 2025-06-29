@@ -101,6 +101,7 @@ This is a modern Web3-first landing page application for "XReplyGuy by Trendify"
 ```
 Changelog:
 - June 29, 2025. Initial setup
+- June 29, 2025. Added PostgreSQL database with Web3-focused schema for wallet authentication and invitation-only access system
 ```
 
 ## User Preferences
