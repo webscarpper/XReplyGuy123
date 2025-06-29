@@ -1,0 +1,103 @@
+Create a modern landing page for "XReplyGuy by Trendify" - the most advanced, undetectable Twitter automation platform ever built. This is a Web3-first application with Phantom wallet authentication.
+
+## TECH STACK TO INSTALL (CORE ONLY):
+
+**Frontend:**
+- Next.js 14 (App Router)
+- TypeScript
+- Tailwind CSS
+- Shadcn/ui components
+- Framer Motion (animations)
+- Lucide React (icons)
+
+**Web3/Solana:**
+- @solana/wallet-adapter-react
+- @solana/wallet-adapter-react-ui
+- @solana/wallet-adapter-wallets
+- @solana/web3.js
+
+**Backend:**
+- Drizzle ORM
+- PostgreSQL (Neon/Supabase)
+- WebSocket support (ws)
+
+## AUTHENTICATION SYSTEM:
+- Phantom wallet connection
+- Invitation code modal after wallet connection
+- User ID = Invitation Code + Wallet Public Key
+- Tier assignment based on invitation code
+
+## PRICING TIERS:
+- **Free:** 20 actions/day (Invitation required)
+- **Starter:** 250 actions/day - 2 SOL (30 days)
+- **Pro:** 500 actions/day - 3 SOL (30 days)
+- **Advanced:** 750 actions/day - 4 SOL (30 days)
+- **Enterprise:** 1000 actions/day - 5 SOL (30 days)
+
+## LANDING PAGE COPY (POWERFUL MARKETING):
+
+**Hero Section:**
+- Headline: "The World's Most Advanced Twitter Automation"
+- Subheadline: "100% Undetectable. 100% Proprietary. Extensively Battle-Tested by 1000+ Users."
+- Power statement: "While others get banned, we dominate."
+- CTA: "Get Exclusive Access" + "Connect Phantom Wallet"
+
+**Authority Section:**
+- "The ONLY automation that's never been detected"
+- "Proprietary AI that thinks like humans"
+- "Enterprise-grade infrastructure trusted by Fortune 500"
+- "99.97% success rate across 50,000+ accounts"
+
+**Features (Dominance Focused):**
+1. **"Unbreakable Stealth"** - Military-grade anti-detection technology
+2. **"Live Command Center"** - Watch your empire grow in real-time
+3. **"AI Mastermind"** - Replies so human, even you'll be impressed
+
+**Social Proof:**
+- "1000+ Elite Users Can't Be Wrong"
+- "Zero Bans. Zero Detection. Zero Competition."
+- "$2.3M+ in Revenue Generated for Our Users"
+
+**Scarcity/Exclusivity:**
+- "Invitation-Only Access"
+- "Limited to 5000 Users Worldwide"
+- "Join the Underground Elite"
+
+**How It Works (Power Language):**
+1. **"Gain Access"** - Connect wallet + enter invitation code
+2. **"Deploy Automation"** - Launch your unstoppable campaign
+3. **"Watch & Dominate"** - Real-time control of your Twitter empire
+4. **"Scale Infinitely"** - Multiply your influence 24/7
+
+**Pricing (Value Focused):**
+- "Investment Tiers for Serious Players"
+- "ROI: 500-2000% within 30 days"
+- "What others charge $500/month for, we deliver for SOL"
+
+## DESIGN REQUIREMENTS:
+- Dark, premium, exclusive aesthetic
+- Crypto/Web3 modern design
+- High-contrast, bold typography
+- Animated counters and stats
+- Phantom wallet integration prominent
+- Invitation code modal with exclusivity feel
+- Trust badges: "Battle-Tested", "Undetected", "Elite"
+
+## TECHNICAL SETUP:
+- Complete folder structure for scaling
+- Phantom wallet connection component
+- Invitation code validation system
+- Database schema for users and codes
+- Environment variables template
+- TypeScript configuration
+- Responsive design system
+
+## BRAND PERSONALITY:
+- Confident, dominant, exclusive
+- Underground/elite community feel
+- Results-focused, no-nonsense
+- Premium positioning
+- Scarcity and exclusivity
+- Power user focused
+
+Create a landing page that screams "This is the tool the pros use" and makes visitors desperate to get access.
