@@ -1,0 +1,157 @@
+Yes, we need to create the complete page structure and routing first before the wizard will work properly. Let me break down what we need:
+
+🏗️ REQUIRED PAGES & ROUTING STRUCTURE
+1. Current State:
+✅ Landing Page (/)
+✅ Authentication System (Phantom wallet + codes)
+✅ Dashboard (/dashboard) - Basic layout
+2. Missing Pages We Need:
+❌ /dashboard/create-automation (Automation Wizard)
+❌ /dashboard/automations (List of user's automations)
+❌ /dashboard/automations/[id] (Individual automation details)
+❌ /dashboard/automations/[id]/live (Live browser command center)
+❌ /dashboard/analytics (Performance analytics)
+❌ /dashboard/settings (Account settings)
+3. Required API Routes:
+❌ /api/automations (CRUD operations)
+❌ /api/automations/[id]/start (Start automation)
+❌ /api/automations/[id]/stop (Stop automation)
+❌ /api/bright-data/session (Browser session management)
+❌ /api/ai/generate-reply (AI reply generation)
+🚀 REPLIT PROMPT FOR COMPLETE PAGE STRUCTURE
+Create the complete page structure and routing for XReplyGuy dashboard. We need all the pages and API routes set up before implementing the automation wizard functionality.
+
+## PAGES TO CREATE:
+
+### 1. AUTOMATION WIZARD (/dashboard/create-automation)
+- Multi-step wizard component (4 steps)
+- Form validation and state management
+- Navigation between steps
+- Save draft functionality
+- Final deployment action
+
+### 2. AUTOMATIONS LIST (/dashboard/automations)
+- List all user's automations
+- Status indicators (Active, Paused, Stopped)
+- Quick actions (Start, Stop, View Live, Edit)
+- Empty state for no automations
+- Create new automation button
+
+### 3. AUTOMATION DETAILS (/dashboard/automations/[id])
+- Individual automation overview
+- Performance metrics
+- Settings and configuration
+- Action history
+- Controls (Start, Stop, Edit, Delete)
+
+### 4. LIVE COMMAND CENTER (/dashboard/automations/[id]/live)
+- Live browser view placeholder
+- Action feed component
+- Real-time controls
+- Performance monitoring
+- Emergency stop functionality
+
+### 5. ANALYTICS DASHBOARD (/dashboard/analytics)
+- Performance charts and metrics
+- Usage statistics
+- Success rates
+- Account health monitoring
+
+### 6. ACCOUNT SETTINGS (/dashboard/settings)
+- User profile information
+- Subscription details
+- Tier management
+- Notification preferences
+
+## API ROUTES TO CREATE:
+
+### AUTOMATION MANAGEMENT:
+```typescript
+// GET /api/automations - List user automations
+// POST /api/automations - Create new automation
+// GET /api/automations/[id] - Get automation details
+// PUT /api/automations/[id] - Update automation
+// DELETE /api/automations/[id] - Delete automation
+// POST /api/automations/[id]/start - Start automation
+// POST /api/automations/[id]/stop - Stop automation
+BROWSER SESSION MANAGEMENT:
+// POST /api/bright-data/session - Create browser session
+// GET /api/bright-data/session/[id] - Get session status
+// DELETE /api/bright-data/session/[id] - End session
+AI INTEGRATION:
+// POST /api/ai/generate-reply - Generate AI reply
+// POST /api/ai/analyze-post - Analyze post content
+DATABASE SCHEMA ADDITIONS:
+AUTOMATIONS TABLE:
+CREATE TABLE automations (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT REFERENCES users(id),
+  name VARCHAR(255) NOT NULL,
+  status ENUM('draft', 'active', 'paused', 'stopped') DEFAULT 'draft',
+  target_keywords TEXT[],
+  target_accounts TEXT[],
+  reply_style VARCHAR(100),
+  custom_instructions TEXT,
+  daily_limit INTEGER,
+  active_hours JSONB,
+  stealth_settings JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+AUTOMATION ACTIONS TABLE:
+CREATE TABLE automation_actions (
+  id SERIAL PRIMARY KEY,
+  automation_id INTEGER REFERENCES automations(id),
+  action_type ENUM('like', 'reply', 'follow'),
+  target_post_url TEXT,
+  target_user TEXT,
+  content TEXT,
+  status ENUM('pending', 'completed', 'failed'),
+  executed_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+BROWSER SESSIONS TABLE:
+CREATE TABLE browser_sessions (
+  id SERIAL PRIMARY KEY,
+  automation_id INTEGER REFERENCES automations(id),
+  session_id TEXT UNIQUE,
+  status ENUM('starting', 'waiting_login', 'active', 'stopped', 'error'),
+  browser_url TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  ended_at TIMESTAMP
+);
+NAVIGATION UPDATES:
+SIDEBAR NAVIGATION:
+Update sidebar to include all new routes
+Add active state indicators
+Implement proper routing
+Add breadcrumb navigation
+DASHBOARD LAYOUT:
+Create shared layout component
+Add proper page transitions
+Implement loading states
+Add error boundaries
+TECHNICAL REQUIREMENTS:
+ROUTING:
+Set up Next.js App Router for all pages
+Add middleware for authentication
+Implement proper error handling
+Add loading states
+STATE MANAGEMENT:
+Set up context for user data
+Add automation state management
+Implement real-time updates
+Add form state handling
+COMPONENTS:
+Create reusable UI components
+Add form components for wizard
+Implement data tables
+Add chart components for analytics
+IMPORTANT NOTES:
+Create PLACEHOLDER content for now
+Focus on routing and page structure
+Don't implement complex functionality yet
+Ensure all pages are accessible and properly linked
+Add proper TypeScript types
+Include error handling and loading states
+Create the complete page structure so we can then implement the automation wizard and other features step by step.
