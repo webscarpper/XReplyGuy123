@@ -95,13 +95,44 @@ export function handleBrowserWebSocket(ws: WebSocket) {
   });
 }
 
-// Start live streaming
+// Bright Data's official live view method from documentation
+async function openDevtools(page: any, client: any) {
+  const frameId = page.mainFrame()._id;
+  // Get URL for live browser view from Bright Data
+  const { url: inspectUrl } = await client.send('Page.inspect', { frameId });
+  return inspectUrl; // Return URL for frontend iframe
+}
+
+// Start live streaming with Bright Data's official method
 async function startScreenStreaming() {
   if (!testPage || !testClient || isStreaming) return;
 
   try {
     console.log("Starting live screen streaming...");
     
+    // Try Bright Data's official live view method first
+    try {
+      const liveViewUrl = await openDevtools(testPage, testClient);
+      console.log('Live view URL obtained:', liveViewUrl);
+      
+      // Send live view URL to all connected WebSocket clients
+      streamingSockets.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'live_view_url',
+            url: liveViewUrl
+          }));
+        }
+      });
+
+      isStreaming = true;
+      console.log("Live view streaming started successfully");
+      return;
+    } catch (liveViewError: any) {
+      console.log("Live view method failed, falling back to screencast:", liveViewError.message);
+    }
+    
+    // Fallback to screencast method
     await testClient.send('Page.startScreencast', {
       format: 'jpeg',
       quality: 90,
@@ -134,7 +165,7 @@ async function startScreenStreaming() {
     });
 
     isStreaming = true;
-    console.log("Live streaming started successfully");
+    console.log("Fallback screencast streaming started successfully");
     
   } catch (error) {
     console.error("Failed to start streaming:", error);

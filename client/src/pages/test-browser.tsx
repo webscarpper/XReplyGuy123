@@ -38,6 +38,7 @@ export default function TestBrowser() {
   const [wsConnected, setWsConnected] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [liveFrame, setLiveFrame] = useState<string | null>(null);
+  const [liveViewUrl, setLiveViewUrl] = useState<string | null>(null);
   const [clickIndicator, setClickIndicator] = useState<{x: number, y: number, id: number} | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -80,6 +81,9 @@ export default function TestBrowser() {
           
           if (message.type === 'browser_frame') {
             setLiveFrame(`data:image/jpeg;base64,${message.data}`);
+          } else if (message.type === 'live_view_url') {
+            setLiveViewUrl(message.url);
+            console.log('Received live view URL:', message.url);
           } else if (message.type === 'control_feedback') {
             // Show click indicator
             if (message.action === 'click') {
@@ -482,31 +486,57 @@ export default function TestBrowser() {
                 onKeyDown={manualControlEnabled ? handleKeyPress : undefined}
                 onWheel={manualControlEnabled ? handleScroll : undefined}
               >
-                <canvas
-                  ref={canvasRef}
-                  width={1400}
-                  height={900}
-                  onClick={manualControlEnabled ? handleCanvasClick : undefined}
-                  className="w-full h-auto bg-black"
-                  style={{ maxHeight: '80vh' }}
-                />
+                {liveViewUrl ? (
+                  <div className="relative">
+                    <iframe
+                      src={liveViewUrl}
+                      width={1400}
+                      height={900}
+                      className="w-full h-auto bg-black"
+                      style={{ maxHeight: '80vh' }}
+                      title="Bright Data Live Browser View"
+                      allow="clipboard-read; clipboard-write"
+                    />
+                    <div className="absolute top-2 right-2 bg-green-500/20 border border-green-500 rounded px-2 py-1 text-xs text-green-400">
+                      Live Chrome DevTools
+                    </div>
+                  </div>
+                ) : (
+                  <canvas
+                    ref={canvasRef}
+                    width={1400}
+                    height={900}
+                    onClick={manualControlEnabled ? handleCanvasClick : undefined}
+                    className="w-full h-auto bg-black"
+                    style={{ maxHeight: '80vh' }}
+                  />
+                )}
               </div>
               
               {manualControlEnabled && (
                 <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                   <div className="flex items-center space-x-4 text-sm text-blue-300">
-                    <div className="flex items-center space-x-2">
-                      <Mouse className="h-4 w-4" />
-                      <span>Click to interact</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Keyboard className="h-4 w-4" />
-                      <span>Type to send keys</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RefreshCw className="h-4 w-4" />
-                      <span>Scroll with mouse wheel</span>
-                    </div>
+                    {liveViewUrl ? (
+                      <div className="flex items-center space-x-2">
+                        <Monitor className="h-4 w-4" />
+                        <span>Full browser control available in Chrome DevTools above</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center space-x-2">
+                          <Mouse className="h-4 w-4" />
+                          <span>Click to interact</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Keyboard className="h-4 w-4" />
+                          <span>Type to send keys</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RefreshCw className="h-4 w-4" />
+                          <span>Scroll with mouse wheel</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
