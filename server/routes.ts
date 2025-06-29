@@ -5,6 +5,7 @@ import { authRoutes } from "./routes/auth";
 import { automationRoutes } from "./routes/automations";
 import { browserRoutes } from "./routes/browser";
 import { aiRoutes } from "./routes/ai";
+import testBrowserRoutes from "./routes/test-browser";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes for wallet authentication
@@ -18,6 +19,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // AI integration routes
   app.use("/api/ai", aiRoutes);
+  
+  // Test browser routes for Bright Data testing
+  app.use("/api/test-browser", testBrowserRoutes);
 
   const httpServer = createServer(app);
 

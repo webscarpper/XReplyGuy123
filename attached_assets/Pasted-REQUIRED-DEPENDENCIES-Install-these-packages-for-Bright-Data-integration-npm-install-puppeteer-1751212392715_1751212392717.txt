@@ -1,0 +1,80 @@
+REQUIRED DEPENDENCIES:
+Install these packages for Bright Data integration:
+
+npm install puppeteer-core playwright-core
+TEST PAGE TO CREATE:
+Create /dashboard/test-browser page with the following functionality:
+
+1. BROWSER CONNECTION TEST:
+// Test Bright Data connection
+const puppeteer = require('puppeteer-core');
+const BROWSER_ENDPOINT = process.env.BRIGHT_DATA_BROWSER_ENDPOINT;
+
+async function testConnection() {
+  try {
+    const browser = await puppeteer.connect({
+      browserWSEndpoint: BROWSER_ENDPOINT,
+    });
+    
+    const page = await browser.newPage();
+    await page.goto('https://twitter.com');
+    
+    // Take screenshot to verify it works
+    const screenshot = await page.screenshot({ 
+      encoding: 'base64',
+      fullPage: false 
+    });
+    
+    return { success: true, screenshot };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+2. LIVE BROWSER VIEW TEST:
+Create a test interface that shows:
+
+Connection status (Connected/Disconnected)
+Current page URL
+Live screenshot (updated every 3 seconds)
+Basic controls (Navigate, Refresh, Screenshot)
+3. TWITTER NAVIGATION TEST:
+Test specific Twitter automation:
+
+Navigate to twitter.com
+Wait for page load
+Take screenshot of login page
+Test element detection (login form, etc.)
+4. SESSION PERSISTENCE TEST:
+Create browser session
+Navigate to multiple pages
+Verify session stays alive
+Test reconnection if needed
+API ROUTE TO CREATE:
+Create /api/test-browser endpoint:
+
+// POST /api/test-browser - Test browser connection
+// GET /api/test-browser/screenshot - Get current screenshot
+// POST /api/test-browser/navigate - Navigate to URL
+// DELETE /api/test-browser/session - End session
+TEST PAGE UI:
+Create a simple test interface with:
+
+"Test Connection" button
+Status display (success/error messages)
+Screenshot display area
+URL input and navigate button
+Session controls (start/stop)
+ENVIRONMENT VARIABLES:
+Add to .env file:
+
+BRIGHT_DATA_API_TOKEN=4993861f-bd87-45cd-8ce8-a5519f5d94f2
+BRIGHT_DATA_BROWSER_ENDPOINT=wss://brd-customer-hl_3697bb66-zone-xreplyguy:51f4fiqifcsy@brd.superproxy.io:9222
+SUCCESS CRITERIA:
+✓ Successfully connect to Bright Data Browser API ✓ Navigate to twitter.com and take screenshot ✓ Display live browser view in our app ✓ Verify session persistence works ✓ Test basic automation capabilities
+
+IMPORTANT NOTES:
+This is just a TEST PAGE to verify technology works
+Don't integrate with main dashboard yet
+Focus on proving the core browser automation works
+Add proper error handling and logging
+Test both connection and disconnection scenarios

@@ -11,6 +11,7 @@ import AutomationDetails from "@/pages/automation-details";
 import LiveAutomation from "@/pages/live-automation";
 import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
+import TestBrowser from "@/pages/test-browser";
 import NotFound from "@/pages/not-found";
 
 function Router() {
