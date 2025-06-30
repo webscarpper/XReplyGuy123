@@ -1118,9 +1118,8 @@ router.post("/automated-login", async (req, res) => {
 
     console.log('Starting automated X/Twitter login...');
     
-    // Wait for page to load completely
-    await testPage.waitForLoadState('networkidle');
-    await testPage.waitForTimeout(3000);
+    // Wait for page to load completely (Puppeteer syntax)
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
     try {
       // Try multiple possible username field selectors
@@ -1152,16 +1151,16 @@ router.post("/automated-login", async (req, res) => {
       
       // Clear and fill username
       await testPage.click(usernameField);
-      await testPage.keyboard.press('Control+a');
+      await testPage.keyboard.down('Control');
+      await testPage.keyboard.press('a');
+      await testPage.keyboard.up('Control');
       await testPage.keyboard.type(username);
-      await testPage.waitForTimeout(1000);
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Find and click Next button
       const nextSelectors = [
         '[data-testid="ocfEnterTextNextButton"]',
-        'button:has-text("Next")',
-        '[role="button"]:has-text("Next")',
-        'button[type="button"]:has-text("Next")'
+        'button[type="button"]'
       ];
       
       let nextClicked = false;
@@ -1184,7 +1183,7 @@ router.post("/automated-login", async (req, res) => {
       }
       
       // Wait for password field to appear
-      await testPage.waitForTimeout(3000);
+      await new Promise(resolve => setTimeout(resolve, 3000));
       
       const passwordSelectors = [
         'input[name="password"]',
@@ -1212,15 +1211,15 @@ router.post("/automated-login", async (req, res) => {
       
       // Clear and fill password
       await testPage.click(passwordField);
-      await testPage.keyboard.press('Control+a');
+      await testPage.keyboard.down('Control');
+      await testPage.keyboard.press('a');
+      await testPage.keyboard.up('Control');
       await testPage.keyboard.type(password);
-      await testPage.waitForTimeout(1000);
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Find and click Login button
       const loginSelectors = [
         '[data-testid="LoginForm_Login_Button"]',
-        'button:has-text("Log in")',
-        '[role="button"]:has-text("Log in")',
         'button[type="submit"]'
       ];
       
@@ -1244,7 +1243,7 @@ router.post("/automated-login", async (req, res) => {
       }
       
       // Wait for login to complete and check for success
-      await testPage.waitForTimeout(5000);
+      await new Promise(resolve => setTimeout(resolve, 5000));
       
       const currentUrl = testPage.url();
       console.log(`Login completed, current URL: ${currentUrl}`);
