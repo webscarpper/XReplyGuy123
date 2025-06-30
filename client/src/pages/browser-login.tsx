@@ -248,11 +248,53 @@ export default function BrowserLogin() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2 text-sm text-slate-300">
-                    <p><strong>Step 1:</strong> Use the live browser on the right to log in to X/Twitter</p>
-                    <p><strong>Step 2:</strong> Complete any required verification steps</p>
-                    <p><strong>Step 3:</strong> Once logged in, click "Continue Automation" below</p>
+                  <div className="mb-4">
+                    <Button
+                      onClick={() => setShowAutomatedLogin(!showAutomatedLogin)}
+                      variant="outline"
+                      className="w-full text-blue-400 border-blue-400 hover:bg-blue-400/10"
+                    >
+                      {showAutomatedLogin ? 'Switch to Manual Login' : 'Use Automated Login'}
+                    </Button>
                   </div>
+
+                  {showAutomatedLogin ? (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-slate-300">X/Twitter Username</label>
+                        <Input
+                          type="text"
+                          placeholder="Enter your username or email"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          className="bg-slate-700 border-slate-600 text-white"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-slate-300">Password</label>
+                        <Input
+                          type="password"
+                          placeholder="Enter your password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="bg-slate-700 border-slate-600 text-white"
+                        />
+                      </div>
+                      <Button
+                        onClick={handleAutomatedLogin}
+                        disabled={automatedLoginLoading || !username.trim() || !password.trim()}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        {automatedLoginLoading ? 'Logging In...' : 'Automated Login'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 text-sm text-slate-300">
+                      <p><strong>Step 1:</strong> Use the live browser on the right to log in to X/Twitter</p>
+                      <p><strong>Step 2:</strong> Complete any required verification steps</p>
+                      <p><strong>Step 3:</strong> Once logged in, click "Continue Automation" below</p>
+                    </div>
+                  )}
                   
                   <div className="pt-4 border-t border-slate-700">
                     {automationContinued ? (
