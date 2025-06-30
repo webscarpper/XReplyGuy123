@@ -579,8 +579,8 @@ router.delete("/session", async (req, res) => {
 // Force login detection check
 router.post("/check-login", async (req, res) => {
   try {
-    if (!testPage) {
-      return res.json({ success: false, message: 'No browser session active' });
+    if (!testPage || !isConnected) {
+      return res.json({ success: false, message: 'No active browser session' });
     }
 
     const currentUrl = await testPage.url();
@@ -675,18 +675,21 @@ router.post("/test-automation", async (req, res) => {
       timeout: 30000 
     });
 
-    // STEP 2: Manual Login Handoff - Simplified approach
-    console.log("STEP 2: Setting up manual login handoff...");
+    // STEP 2: Start live streaming and manual login handoff
+    console.log("STEP 2: Starting live stream for manual login...");
     
-    // Send manual intervention request with current page URL
+    // Start streaming automatically
+    await startScreenStreaming();
+    
+    // Send manual intervention request
     const currentUrl = await testPage.url();
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'manual_intervention',
           inspectUrl: currentUrl,
-          message: 'Please log in manually in the main browser window',
-          instructions: 'The browser should have navigated to X login page. Please log in manually using your credentials. The automation will detect when you complete login and continue automatically.'
+          message: 'Please log in using the live browser below',
+          instructions: 'You can now see and interact with the X/Twitter login page in the live stream. Complete your login and the automation will continue automatically.'
         }));
       }
     });

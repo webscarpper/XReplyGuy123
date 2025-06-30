@@ -724,67 +724,39 @@ export default function TestBrowser() {
           </CardContent>
         </Card>
 
-        {/* Manual Intervention Modal */}
+        {/* Manual Login Notification */}
         {showManualModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-[hsl(0,0%,8%)] border border-[hsl(0,0%,20%)] rounded-lg p-8 max-w-2xl w-full mx-4">
-              <div className="text-center">
-                <Monitor className="h-16 w-16 mx-auto mb-4 text-blue-400" />
-                <h2 className="text-2xl font-bold mb-4">Manual Login Required</h2>
-                <p className="text-gray-300 mb-6 text-lg">
-                  The browser has navigated to X/Twitter login page. Please complete the login process manually. 
-                  The automation will detect when you're logged in and continue automatically.
-                </p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  <Button 
-                    onClick={async () => {
-                      if (!isStreaming) {
-                        await toggleStreaming();
-                      }
-                      // Close modal and focus on live stream area
-                      setShowManualModal(false);
-                    }}
-                    disabled={loading}
-                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-3"
-                    size="lg"
-                  >
-                    <Play className="h-5 w-5 mr-2" />
-                    {isStreaming ? "Show Browser & Login" : "Start Live Stream & Login"}
-                  </Button>
-                  
-                  <Button 
-                    onClick={checkLoginStatus}
-                    variant="outline"
-                    className="px-6 py-3"
-                    size="lg"
-                  >
-                    <Monitor className="h-5 w-5 mr-2" />
-                    Check Login Status
-                  </Button>
-                </div>
-                
-                <div className="mt-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                  <h4 className="text-yellow-300 font-medium mb-2">Quick Instructions:</h4>
-                  <div className="text-yellow-200 text-sm space-y-1">
-                    <p>1. Start the live stream above to see the browser</p>
-                    <p>2. Enter your X/Twitter login credentials</p>
-                    <p>3. Complete any 2FA or verification steps</p>
-                    <p>4. Automation will continue once logged in</p>
-                  </div>
-                </div>
-                
-                <div className="mt-6 text-center">
-                  <p className="text-gray-400 text-sm">
-                    Waiting for login completion... This modal will close automatically.
-                  </p>
-                  <div className="flex justify-center mt-4">
-                    <RefreshCw className="h-5 w-5 animate-spin text-blue-400" />
-                  </div>
-                </div>
+          <div className="fixed top-20 right-6 bg-[hsl(0,0%,8%)] border border-yellow-500/30 rounded-lg p-4 max-w-sm z-50 shadow-lg">
+            <div className="flex items-start space-x-3">
+              <div className="flex-shrink-0">
+                <Monitor className="h-5 w-5 text-yellow-400 mt-1" />
               </div>
+              <div className="flex-1">
+                <h4 className="text-yellow-300 font-medium mb-1">Manual Login Required</h4>
+                <p className="text-yellow-200 text-sm mb-3">
+                  Please log in using the live browser below. The automation will continue automatically once you're logged in.
+                </p>
+                <Button 
+                  onClick={() => {
+                    checkLoginStatus();
+                    setShowManualModal(false);
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                >
+                  Continue Automation
+                </Button>
+              </div>
+              <button 
+                onClick={() => setShowManualModal(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
             </div>
           </div>
+        )}
         )}
 
         {/* Live Browser View */}
