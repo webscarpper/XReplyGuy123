@@ -1175,41 +1175,123 @@ router.post("/test-automation", async (req, res) => {
         throw new Error('Could not find password input field after multiple strategies');
       }
       
-      // Focus password field and generate DevTools URL for manual login
+      // Alternative approach: Use clipboard-based password entry
       await testPage.focus(passwordField);
       await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log('Password field focused - generating DevTools URL for manual intervention');
+      console.log('Password field focused - attempting clipboard-based password entry');
       
-      // Generate DevTools URL using Page.inspect
-      const client = await testPage.target().createCDPSession();
-      const {frameTree: {frame}} = await client.send('Page.getFrameTree', {});
-      const {url: inspectUrl} = await client.send('Page.inspect', {frameId: frame.id});
-      
-      console.log('DevTools URL generated:', inspectUrl);
-      
-      // Send manual intervention request with DevTools URL
-      streamingSockets.forEach(ws => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'manual_intervention',
-            inspectUrl: inspectUrl,
-            message: 'Please log in manually in Chrome DevTools',
-            instructions: 'Click the button below to open Chrome DevTools in a new window. Complete the login process there, then the automation will continue automatically.',
-            timeoutMinutes: 5,
-            step: 2,
-            totalSteps: 8,
-            currentAction: 'Waiting for manual login completion'
-          }));
+      try {
+        // Try alternative methods for password entry
+        
+        // Method 1: Use keyboard shortcuts and clipboard
+        await testPage.evaluate(async (pwd) => {
+          // Set password to clipboard via execCommand (if available)
+          const textArea = document.createElement('textarea');
+          textArea.value = pwd;
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+        }, password);
+        
+        // Focus password field and try paste
+        await testPage.focus(passwordField);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await testPage.keyboard.down('Control');
+        await testPage.keyboard.press('KeyV');
+        await testPage.keyboard.up('Control');
+        
+        console.log('Clipboard-based password entry attempted');
+        
+      } catch (clipboardError) {
+        console.log('Clipboard method failed, trying direct value injection...');
+        
+        // Method 2: Direct DOM value injection
+        try {
+          await testPage.evaluate((selector, pwd) => {
+            const field = document.querySelector(selector) as HTMLInputElement;
+            if (field) {
+              field.value = pwd;
+              field.dispatchEvent(new Event('input', { bubbles: true }));
+              field.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, passwordField, password);
+          
+          console.log('Direct DOM injection attempted');
+        } catch (domError) {
+          console.log('DOM injection failed, requesting manual entry...');
+          
+          // Method 3: Manual entry fallback with live view
+          const client = await testPage.target().createCDPSession();
+          const {frameTree: {frame}} = await client.send('Page.getFrameTree', {});
+          const {url: inspectUrl} = await client.send('Page.inspect', {frameId: frame.id});
+          
+          console.log('Fallback to manual entry with DevTools URL:', inspectUrl);
+          
+          streamingSockets.forEach(ws => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: 'manual_intervention',
+                inspectUrl: inspectUrl,
+                message: 'Password automation failed - manual entry required',
+                instructions: 'Open DevTools, enter your password manually, then click Login. The automation will detect completion automatically.',
+                timeoutMinutes: 5,
+                step: 2,
+                totalSteps: 8,
+                currentAction: 'Waiting for manual password entry'
+              }));
+            }
+          });
+          
+          // Wait for manual completion
+          const loginSuccess = await waitForLoginCompletion();
+          if (!loginSuccess) {
+            throw new Error("Manual login timeout - please complete login within 5 minutes");
+          }
+          return; // Exit early for manual path
         }
-      });
-      
-      // Wait for manual login completion with proper polling
-      console.log('Waiting for manual login completion in DevTools window...');
-      const loginSuccess = await waitForLoginCompletion();
-      
-      if (!loginSuccess) {
-        throw new Error("Manual login timeout - please complete login within 5 minutes");
       }
+      
+      // Continue with automated login button click
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Try to click Login button
+      const loginSelectors = [
+        '[data-testid="LoginForm_Login_Button"]',
+        'button:has-text("Log in")',
+        'div[role="button"]:has-text("Log in")',
+        'button[type="submit"]',
+        'div[data-testid="LoginForm_Login_Button"]'
+      ];
+      
+      let loginClicked = false;
+      for (const selector of loginSelectors) {
+        try {
+          await testPage.waitForSelector(selector, { timeout: 5000, visible: true });
+          await testPage.click(selector);
+          loginClicked = true;
+          console.log(`Login button clicked: ${selector}`);
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!loginClicked) {
+        console.log('Login button not found, trying Enter key...');
+        await testPage.keyboard.press('Enter');
+      }
+      
+      // Wait for login completion
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Verify login success
+      const loginSuccess = await checkLoginComplete();
+      if (!loginSuccess) {
+        throw new Error("Automated login verification failed - login may not have completed");
+      }
+      
+      console.log('Automated login completed successfully');
       
       console.log('Manual password entry and login completed successfully');
       
