@@ -625,7 +625,7 @@ router.post("/check-login", async (req, res) => {
       indicators: loginSuccess.indicators,
       currentUrl
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Login check error:', error);
     res.json({ success: false, message: 'Error checking login status', error: error.message });
   }

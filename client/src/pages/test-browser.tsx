@@ -365,6 +365,30 @@ export default function TestBrowser() {
     }
   };
 
+  const checkLoginStatus = async () => {
+    try {
+      const response = await apiRequest('/check-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+
+      console.log('Login check response:', response);
+      
+      if (response.loginDetected) {
+        setShowManualModal(false);
+        alert('Login detected successfully! Automation will continue.');
+        console.log('Login detected successfully!', response.indicators);
+      } else {
+        console.log('Login not detected yet:', response.indicators);
+        alert(`Login not detected yet. Current URL: ${response.currentUrl}`);
+      }
+    } catch (error) {
+      console.error('Error checking login status:', error);
+      alert('Error checking login status. Check console for details.');
+    }
+  };
+
   // Update canvas when live frame changes
   useEffect(() => {
     if (canvasRef.current && liveFrame) {
