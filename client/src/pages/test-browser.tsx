@@ -757,7 +757,6 @@ export default function TestBrowser() {
             </div>
           </div>
         )}
-        )}
 
         {/* Live Browser View */}
         {(liveFrame || liveViewUrl) && (
