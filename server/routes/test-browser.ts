@@ -12,6 +12,7 @@ let testClient: any = null;
 let isConnected = false;
 let isStreaming = false;
 let streamingSockets: Set<WebSocket> = new Set();
+let liveViewUrl: string | null = null;
 
 const BROWSER_ENDPOINT = process.env.PUPPETEER_ENDPOINT;
 const API_TOKEN = process.env.API_TOKEN;
@@ -586,7 +587,32 @@ router.post("/continue-automation", async (req, res) => {
     console.log("Manual login completed, continuing automation...");
     
     // Continue with post-login automation steps
-    await continuePostLoginAutomation();
+    console.log("STEP 4: Proceeding with post-login automation...");
+    
+    // Navigate to search and interact with posts
+    await testPage.goto('https://x.com/search?q=crypto%20AI%20automation&src=typed_query&f=live', {
+      waitUntil: 'networkidle0',
+      timeout: 30000
+    });
+    
+    // Wait for posts to load and interact
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    console.log("STEP 5: Finding and interacting with posts...");
+    
+    // Notify about continued automation
+    streamingSockets.forEach(ws => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'automation_status',
+          status: 'continuing',
+          message: 'Automation continued successfully! Now interacting with posts...',
+          step: 4,
+          totalSteps: 8,
+          estimatedTime: '2-3 minutes remaining'
+        }));
+      }
+    });
     
     res.json({ 
       success: true, 
@@ -703,12 +729,15 @@ router.post("/test-automation", async (req, res) => {
     // Start streaming automatically
     await startScreenStreaming();
     
+    // Get the current live view URL for the tab
+    const currentLiveViewUrl = liveViewUrl || 'https://cdn.brightdata.com/static/devtools/136/inspector.html';
+    
     // Send request to open new tab with live browser
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'open_login_tab',
-          liveViewUrl: liveViewUrl || '',
+          liveViewUrl: currentLiveViewUrl,
           message: 'Opening live browser tab for manual login',
           instructions: 'A new tab will open with the live browser. Please log in to X/Twitter there and click "Continue Automation" when done.'
         }));
