@@ -945,86 +945,148 @@ router.post("/test-automation", async (req, res) => {
       
       // Step 2: Find and click Next button
       console.log('Step 2: Looking for Next button...');
-      const nextSelectors = [
-        '[data-testid="ocfEnterTextNextButton"]',
-        'button:has-text("Next")',
-        'div[role="button"]:has-text("Next")',
-        'button[type="button"]',
-        'div[role="button"]'
-      ];
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       let nextClicked = false;
-      for (const selector of nextSelectors) {
-        try {
-          await testPage.waitForSelector(selector, { timeout: 5000, visible: true });
-          const isVisible = await testPage.evaluate((sel) => {
-            const el = document.querySelector(sel);
-            return el && el.offsetWidth > 0 && el.offsetHeight > 0;
-          }, selector);
-          
-          if (isVisible) {
-            await testPage.click(selector);
-            nextClicked = true;
-            console.log(`Clicked next button: ${selector}`);
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
+      let nextAttempts = 0;
+      const maxClickAttempts = 3;
       
-      if (!nextClicked) {
-        console.log('Next button not found, trying Enter key...');
-        await testPage.keyboard.press('Enter');
+      while (!nextClicked && nextAttempts < maxClickAttempts) {
+        // Try multiple approaches to find and click Next
+        const nextApproaches = [
+          // Approach 1: Look for specific Next button
+          async () => {
+            const nextButton = await testPage.$('[data-testid="ocfEnterTextNextButton"]');
+            if (nextButton) {
+              await nextButton.click();
+              return true;
+            }
+            return false;
+          },
+          
+          // Approach 2: Look for any button with "Next" text
+          async () => {
+            const buttons = await testPage.$$('button, [role="button"]');
+            for (const button of buttons) {
+              const text = await button.evaluate(el => el.textContent?.toLowerCase() || '');
+              const isVisible = await button.isIntersectingViewport();
+              if (isVisible && text.includes('next')) {
+                await button.click();
+                return true;
+              }
+            }
+            return false;
+          },
+          
+          // Approach 3: Press Enter key
+          async () => {
+            await testPage.keyboard.press('Enter');
+            return true;
+          }
+        ];
+        
+        for (const approach of nextApproaches) {
+          try {
+            const success = await approach();
+            if (success) {
+              console.log(`Next button clicked with approach ${nextApproaches.indexOf(approach) + 1}`);
+              nextClicked = true;
+              break;
+            }
+          } catch (e) {
+            console.log('Next button approach failed:', e);
+            continue;
+          }
+        }
+        
+        if (nextClicked) {
+          // Wait for page transition and check if password field appears
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          const passwordExists = await testPage.$('input[type="password"]') || 
+                                await testPage.$('input[name="password"]') ||
+                                await testPage.$('input[data-testid="ocfEnterTextTextInput"][type="password"]');
+          
+          if (passwordExists) {
+            console.log('Password field appeared - Next button success');
+            break;
+          } else {
+            console.log('Password field not found after Next click, trying again...');
+            nextClicked = false;
+          }
+        }
+        
+        nextAttempts++;
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
       
       // Step 3: Wait for password field and fill it
       console.log('Step 3: Waiting for password field...');
-      await new Promise(resolve => setTimeout(resolve, 4000));
-      
-      const passwordSelectors = [
-        'input[name="password"]',
-        'input[type="password"]',
-        'input[data-testid="ocfEnterTextTextInput"]',
-        'input[placeholder*="password" i]',
-        'input[autocomplete="current-password"]',
-        'input[autocomplete="password"]',
-        'div[data-testid="ocfEnterTextTextInput"] input',
-        'input[aria-label*="password" i]',
-        'input[data-testid*="password" i]'
-      ];
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       let passwordField = null;
       let passwordAttempts = 0;
+      const maxPasswordAttempts = 5;
       
-      while (!passwordField && passwordAttempts < maxAttempts) {
-        for (const selector of passwordSelectors) {
-          try {
-            await testPage.waitForSelector(selector, { timeout: 8000, visible: true });
-            const isVisible = await testPage.evaluate((sel) => {
-              const el = document.querySelector(sel);
-              return el && el.offsetWidth > 0 && el.offsetHeight > 0;
-            }, selector);
+      while (!passwordField && passwordAttempts < maxPasswordAttempts) {
+        console.log(`Password field search attempt ${passwordAttempts + 1}/${maxPasswordAttempts}`);
+        
+        // Strategy 1: Look for password-type inputs
+        const passwordInputs = await testPage.$$('input[type="password"]');
+        for (const input of passwordInputs) {
+          const isVisible = await input.isIntersectingViewport();
+          if (isVisible) {
+            passwordField = 'input[type="password"]';
+            console.log('Found password field by type="password"');
+            break;
+          }
+        }
+        
+        // Strategy 2: Look for text inputs that became password fields
+        if (!passwordField) {
+          const textInputs = await testPage.$$('input[type="text"], input[data-testid="ocfEnterTextTextInput"]');
+          for (const input of textInputs) {
+            const isVisible = await input.isIntersectingViewport();
+            const placeholder = await input.evaluate(el => el.placeholder?.toLowerCase() || '');
+            const name = await input.evaluate(el => el.name?.toLowerCase() || '');
+            const ariaLabel = await input.evaluate(el => el.getAttribute('aria-label')?.toLowerCase() || '');
             
-            if (isVisible) {
-              passwordField = selector;
-              console.log(`Found password field: ${selector}`);
+            if (isVisible && (placeholder.includes('password') || name.includes('password') || ariaLabel.includes('password'))) {
+              passwordField = 'input[data-testid="ocfEnterTextTextInput"]';
+              console.log(`Found password field by attributes: placeholder="${placeholder}", name="${name}", aria-label="${ariaLabel}"`);
               break;
             }
-          } catch (e) {
-            continue;
+          }
+        }
+        
+        // Strategy 3: Look for the current focused input (X often auto-focuses password field)
+        if (!passwordField) {
+          const focusedElement = await testPage.evaluate(() => document.activeElement);
+          if (focusedElement) {
+            const tagName = await testPage.evaluate(el => el.tagName?.toLowerCase(), focusedElement);
+            if (tagName === 'input') {
+              passwordField = 'input:focus';
+              console.log('Found password field by focus');
+            }
           }
         }
         
         if (!passwordField) {
           passwordAttempts++;
-          console.log(`Password field attempt ${passwordAttempts}/${maxAttempts} failed, waiting...`);
+          console.log(`Password field attempt ${passwordAttempts}/${maxPasswordAttempts} failed, waiting 3 seconds...`);
           await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Try pressing Tab to move to next field
+          if (passwordAttempts === 2) {
+            console.log('Trying Tab key to navigate to password field...');
+            await testPage.keyboard.press('Tab');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
       }
       
       if (!passwordField) {
-        throw new Error('Could not find password input field after multiple attempts');
+        throw new Error('Could not find password input field after multiple strategies');
       }
       
       // Clear and fill password
