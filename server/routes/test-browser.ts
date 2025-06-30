@@ -779,6 +779,8 @@ router.post("/check-login", async (req, res) => {
 
 // Test Automation - Complete X/Twitter automation flow
 router.post("/test-automation", async (req, res) => {
+  let screenshotInterval: NodeJS.Timeout | undefined;
+  
   try {
     if (!testPage || !isConnected) {
       return res.status(400).json({
@@ -832,9 +834,32 @@ router.post("/test-automation", async (req, res) => {
     // STEP 2: Start live streaming and automated login
     console.log("STEP 2: Starting live stream and performing automated login...");
     
-    // Start live streaming so user can see the automation
-    await startScreenStreaming();
-    console.log("Live streaming started - user can now see automation");
+    // Start screenshot-based live streaming for automation
+    screenshotInterval = setInterval(async () => {
+      try {
+        if (testPage && isConnected) {
+          const screenshot = await testPage.screenshot({
+            encoding: 'base64',
+            fullPage: false,
+            type: 'png'
+          });
+          
+          streamingSockets.forEach(ws => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: 'live_frame',
+                frame: `data:image/png;base64,${screenshot}`,
+                timestamp: Date.now()
+              }));
+            }
+          });
+        }
+      } catch (error) {
+        console.log('Screenshot error during automation:', error);
+      }
+    }, 2000); // Take screenshot every 2 seconds
+    
+    console.log("Live screenshot streaming started - user can now see automation");
     
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -1219,12 +1244,16 @@ router.post("/test-automation", async (req, res) => {
       }
     });
 
+    // Clean up screenshot interval
+    clearInterval(screenshotInterval);
+    console.log("Screenshot streaming stopped");
+
     res.json({
       success: true,
       message: "Test automation completed successfully",
       steps: {
         navigation: "✓ Navigated to X login",
-        login: "✓ Manual login completed",
+        login: "✓ Automated login completed",
         posts: `✓ Found ${posts.length} posts`,
         interactions: "✓ Liked and replied to post"
       },
@@ -1233,6 +1262,12 @@ router.post("/test-automation", async (req, res) => {
 
   } catch (error: any) {
     console.error("Test automation error:", error);
+    
+    // Clean up screenshot interval on error
+    if (typeof screenshotInterval !== 'undefined') {
+      clearInterval(screenshotInterval);
+      console.log("Screenshot streaming stopped due to error");
+    }
     
     // Send error to WebSocket clients
     streamingSockets.forEach(ws => {

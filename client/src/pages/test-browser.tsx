@@ -114,6 +114,12 @@ export default function TestBrowser() {
           
           if (message.type === 'browser_frame') {
             setLiveFrame(`data:image/jpeg;base64,${message.data}`);
+          } else if (message.type === 'live_frame') {
+            setLiveFrame(message.frame);
+            // Automatically activate streaming when we receive live frames during automation
+            if (!isStreaming) {
+              setIsStreaming(true);
+            }
           } else if (message.type === 'live_view_url') {
             setLiveViewUrl(message.url);
             setIframeLoaded(false);
