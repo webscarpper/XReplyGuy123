@@ -76,24 +76,39 @@ export default function BrowserLogin() {
   };
 
   useEffect(() => {
-    // Try to get live view URL from query parameters first
-    const urlParams = new URLSearchParams(window.location.search);
-    const queryUrl = urlParams.get('liveViewUrl');
-    if (queryUrl) {
-      setLiveViewUrl(decodeURIComponent(queryUrl));
-    } else {
-      // Fallback: fetch live view URL from backend
-      fetchLiveViewUrl();
-    }
+    // Initialize browser session for login
+    initializeBrowserSession();
     
     // Start fetching screenshots to show live browser state
-    fetchScreenshot();
-    
-    // Refresh screenshot every 3 seconds
     const screenshotInterval = setInterval(fetchScreenshot, 3000);
     
     return () => clearInterval(screenshotInterval);
   }, []);
+
+  const initializeBrowserSession = async () => {
+    try {
+      // First connect to browser
+      const connectResponse = await fetch('/api/test-browser/test-connection', {
+        method: 'POST'
+      });
+      const connectResult = await connectResponse.json();
+      
+      if (connectResult.success) {
+        // Navigate to X login page
+        await fetch('/api/test-browser/navigate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: 'https://x.com/i/flow/login' })
+        });
+        
+        // Wait a moment then start taking screenshots
+        setTimeout(fetchScreenshot, 2000);
+      }
+    } catch (error: any) {
+      console.error('Browser initialization failed:', error);
+      setError('Failed to initialize browser session');
+    }
+  };
 
   const fetchLiveViewUrl = async () => {
     try {
