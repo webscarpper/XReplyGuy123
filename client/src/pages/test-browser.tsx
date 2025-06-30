@@ -164,6 +164,12 @@ export default function TestBrowser() {
             // Automatically start live streaming when automation begins
             setIsStreaming(true);
             console.log('Live streaming activated for automation');
+          } else if (message.type === 'manual_password_required') {
+            // Show manual password entry instructions
+            setAutomationMessage(message.message);
+            setManualInstructions(message.instructions);
+            setShowManualModal(true);
+            console.log('Manual password entry required');
           } else if (message.type === 'automation_error') {
             setAutomationRunning(false);
             setAutomationError(message.error);
@@ -790,9 +796,9 @@ export default function TestBrowser() {
                 <Monitor className="h-5 w-5 text-yellow-400 mt-1" />
               </div>
               <div className="flex-1">
-                <h4 className="text-yellow-300 font-medium mb-1">Manual Login Required</h4>
+                <h4 className="text-yellow-300 font-medium mb-1">Manual Password Entry Required</h4>
                 <p className="text-yellow-200 text-sm mb-3">
-                  Please log in using the live browser below. The automation will continue automatically once you're logged in.
+                  The password field is focused and ready. Please type your password in the live browser view below and click Login. Automation will continue automatically.
                 </p>
                 <Button 
                   onClick={() => {

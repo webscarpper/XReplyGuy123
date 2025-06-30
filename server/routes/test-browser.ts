@@ -1089,56 +1089,99 @@ router.post("/test-automation", async (req, res) => {
         throw new Error('Could not find password input field after multiple strategies');
       }
       
-      // Clear and fill password
+      // Focus password field and notify user for manual password entry
       await testPage.focus(passwordField);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await testPage.evaluate((selector) => {
-        const input = document.querySelector(selector);
-        if (input) input.value = '';
-      }, passwordField);
-      
-      await testPage.type(passwordField, password, { delay: 100 });
       await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log('Password entered');
+      console.log('Password field focused - requesting manual password entry');
       
-      // Step 4: Find and click Login button
-      console.log('Step 4: Looking for Login button...');
-      const loginSelectors = [
-        '[data-testid="LoginForm_Login_Button"]',
-        'button:has-text("Log in")',
-        'div[role="button"]:has-text("Log in")',
-        'button[type="submit"]',
-        'div[role="button"]'
-      ];
+      // Send manual intervention request
+      streamingSockets.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'manual_password_required',
+            message: 'Automation paused at password step - please enter password manually',
+            instructions: 'The password field is focused and ready. Please type your password in the live browser view and click Login. The automation will detect when login is complete and continue automatically.',
+            step: 'password_entry',
+            estimatedTime: '30 seconds'
+          }));
+        }
+      });
       
-      let loginClicked = false;
-      for (const selector of loginSelectors) {
+      // Wait for user to manually enter password and complete login
+      console.log('Waiting for manual password entry and login completion...');
+      let loginDetected = false;
+      let loginAttempts = 0;
+      const maxLoginAttempts = 60; // 3 minutes (3 second intervals)
+      
+      while (!loginDetected && loginAttempts < maxLoginAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        loginAttempts++;
+        
         try {
-          await testPage.waitForSelector(selector, { timeout: 5000, visible: true });
-          const isVisible = await testPage.evaluate((sel) => {
-            const el = document.querySelector(sel);
-            return el && el.offsetWidth > 0 && el.offsetHeight > 0;
-          }, selector);
+          const currentUrl = await testPage.url();
+          const loginSuccess = await testPage.evaluate(() => {
+            // Check for multiple indicators of successful login
+            const homeButton = document.querySelector('[data-testid="AppTabBar_Home_Link"]');
+            const profileButton = document.querySelector('[data-testid="AppTabBar_Profile_Link"]');
+            const composeButton = document.querySelector('[data-testid="SideNav_NewTweet_Button"]');
+            const tweetComposer = document.querySelector('[data-testid="tweetTextarea_0"]');
+            const posts = document.querySelectorAll('[data-testid="tweet"]');
+            const userAvatar = document.querySelector('[data-testid="DashButton_ProfileIcon_Link"]');
+            const sideNav = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+            
+            // Check URL patterns
+            const urlIndicators = window.location.href.includes('/home') || 
+                                 window.location.href.includes('x.com') && !window.location.href.includes('/login') &&
+                                 !window.location.href.includes('/i/flow');
+            
+            // Check for tweet timeline content
+            const hasContent = posts.length > 0 || !!tweetComposer;
+            
+            return !!(homeButton || profileButton || composeButton || userAvatar || sideNav || (urlIndicators && hasContent));
+          });
           
-          if (isVisible) {
-            await testPage.click(selector);
-            loginClicked = true;
-            console.log(`Clicked login button: ${selector}`);
-            break;
+          if (loginSuccess || currentUrl.includes('/home') || (currentUrl.includes('x.com') && !currentUrl.includes('/login'))) {
+            loginDetected = true;
+            console.log("Manual login detected successfully!");
+            
+            streamingSockets.forEach(ws => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'automation_status',
+                  status: 'login_completed',
+                  message: 'Manual login successful! Continuing automation...',
+                  step: 4,
+                  totalSteps: 8,
+                  estimatedTime: '2-3 minutes remaining'
+                }));
+              }
+            });
+          } else {
+            // Send periodic status updates
+            if (loginAttempts % 10 === 0) {
+              streamingSockets.forEach(ws => {
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({
+                    type: 'automation_status',
+                    status: 'waiting_manual_login',
+                    message: `Waiting for manual password entry... (${Math.floor(loginAttempts * 3 / 60)}:${(loginAttempts * 3 % 60).toString().padStart(2, '0')})`,
+                    step: 4,
+                    totalSteps: 8
+                  }));
+                }
+              });
+            }
           }
-        } catch (e) {
-          continue;
+        } catch (error) {
+          console.log("Login check error:", error);
         }
       }
       
-      if (!loginClicked) {
-        console.log('Login button not found, trying Enter key...');
-        await testPage.keyboard.press('Enter');
+      if (!loginDetected) {
+        throw new Error("Manual login timeout - please try again");
       }
       
-      // Wait for login to complete
-      await new Promise(resolve => setTimeout(resolve, 8000));
-      console.log('Automated login process completed');
+      console.log('Manual password entry and login completed successfully');
       
     } catch (error: any) {
       console.error('Automated login failed:', error);
