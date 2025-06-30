@@ -143,6 +143,9 @@ Changelog:
 - June 30, 2025. Completely redesigned live browser automation workflow - removed complex Chrome DevTools interface and implemented clean live streaming view that shows actual browser content directly in main interface
 - June 30, 2025. Automation now automatically starts live streaming when reaching login step, allowing direct interaction with X/Twitter login page through canvas-based control system
 - June 30, 2025. Simplified user experience: Start automation → live stream appears automatically → login manually in main view → automation continues automatically
+- June 30, 2025. Implemented new tab-based login system - when manual login needed, automatically opens dedicated login tab with live browser view and "Continue Automation" button
+- June 30, 2025. Created dedicated login page at /dashboard/test-browser/login with live iframe displaying actual X/Twitter login page for direct user interaction
+- June 30, 2025. Added API endpoints for live view URL management and automation continuation - tab remains open after login to show live automation progress
 ```
 
 ## User Preferences
