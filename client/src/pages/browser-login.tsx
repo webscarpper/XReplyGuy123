@@ -22,6 +22,16 @@ export default function BrowserLogin() {
     if (!typeText.trim()) return;
     
     try {
+      // First clear any existing content with Ctrl+A then type new text
+      await fetch('/api/test-browser/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'key', key: 'Control+a' })
+      });
+      
+      // Small delay then type the new text
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const response = await fetch('/api/test-browser/control', {
         method: 'POST',
         headers: {
@@ -110,22 +120,24 @@ export default function BrowserLogin() {
     const y = ((event.clientY - rect.top) / rect.height) * 900;   // Scale to browser height
     
     try {
-      const response = await fetch('/api/test-browser/control', {
+      // Triple click to select all text in field first
+      await fetch('/api/test-browser/control', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          type: 'click',
-          x: Math.round(x),
-          y: Math.round(y)
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'click', x: Math.round(x), y: Math.round(y) })
       });
       
-      const result = await response.json();
-      if (!result.success) {
-        console.error('Click failed:', result.message);
-      }
+      // Small delay for focus
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Select all content in the field (Ctrl+A)
+      await fetch('/api/test-browser/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'key', key: 'Control+a' })
+      });
+      
+      console.log(`Clicked and selected field at ${Math.round(x)}, ${Math.round(y)}`);
     } catch (err: any) {
       console.error('Click error:', err);
     } finally {

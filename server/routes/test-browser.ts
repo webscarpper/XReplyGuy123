@@ -27,11 +27,12 @@ const navigateSchema = z.object({
 });
 
 const controlSchema = z.object({
-  type: z.enum(["click", "type", "scroll"]),
+  type: z.enum(["click", "type", "scroll", "key"]),
   x: z.number().optional(),
   y: z.number().optional(),
   text: z.string().optional(),
-  deltaY: z.number().optional()
+  deltaY: z.number().optional(),
+  key: z.string().optional()
 });
 
 // WebSocket message handler for browser control
@@ -378,6 +379,36 @@ router.post("/control", async (req, res) => {
         if (action.deltaY !== undefined) {
           await testPage.mouse.wheel({ deltaY: action.deltaY });
           console.log(`Manual scroll: ${action.deltaY}`);
+        }
+        break;
+        
+      case 'key':
+        if (action.key) {
+          // Handle key combinations like Ctrl+A
+          if (action.key.includes('+')) {
+            const keys = action.key.split('+');
+            const modifiers = keys.slice(0, -1);
+            const key = keys[keys.length - 1].toLowerCase();
+            
+            // Press modifier keys
+            for (const modifier of modifiers) {
+              await testPage.keyboard.down(modifier);
+            }
+            
+            // Press the main key
+            await testPage.keyboard.press(key);
+            
+            // Release modifier keys in reverse order
+            for (const modifier of modifiers.reverse()) {
+              await testPage.keyboard.up(modifier);
+            }
+            
+            console.log(`Manual key combination: ${action.key}`);
+          } else {
+            // Single key press
+            await testPage.keyboard.press(action.key);
+            console.log(`Manual key: ${action.key}`);
+          }
         }
         break;
     }
