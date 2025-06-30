@@ -576,6 +576,28 @@ router.delete("/session", async (req, res) => {
   }
 });
 
+// Continue automation after manual login
+router.post("/continue-automation", async (req, res) => {
+  try {
+    if (!testPage || !isConnected) {
+      return res.json({ success: false, message: 'No active browser session' });
+    }
+
+    console.log("Manual login completed, continuing automation...");
+    
+    // Continue with post-login automation steps
+    await continuePostLoginAutomation();
+    
+    res.json({ 
+      success: true, 
+      message: 'Automation continued successfully' 
+    });
+  } catch (error: any) {
+    console.error('Continue automation error:', error);
+    res.json({ success: false, message: 'Error continuing automation', error: error.message });
+  }
+});
+
 // Force login detection check
 router.post("/check-login", async (req, res) => {
   try {
@@ -675,21 +697,20 @@ router.post("/test-automation", async (req, res) => {
       timeout: 30000 
     });
 
-    // STEP 2: Start live streaming and manual login handoff
-    console.log("STEP 2: Starting live stream for manual login...");
+    // STEP 2: Start live streaming and open login tab
+    console.log("STEP 2: Starting live stream and opening login tab...");
     
     // Start streaming automatically
     await startScreenStreaming();
     
-    // Send manual intervention request
-    const currentUrl = await testPage.url();
+    // Send request to open new tab with live browser
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
-          type: 'manual_intervention',
-          inspectUrl: currentUrl,
-          message: 'Please log in using the live browser below',
-          instructions: 'You can now see and interact with the X/Twitter login page in the live stream. Complete your login and the automation will continue automatically.'
+          type: 'open_login_tab',
+          liveViewUrl: liveViewUrl || '',
+          message: 'Opening live browser tab for manual login',
+          instructions: 'A new tab will open with the live browser. Please log in to X/Twitter there and click "Continue Automation" when done.'
         }));
       }
     });

@@ -138,6 +138,11 @@ export default function TestBrowser() {
             setManualInspectUrl(message.inspectUrl);
             setManualInstructions(message.instructions);
             setShowManualModal(true);
+          } else if (message.type === 'open_login_tab') {
+            // Open new tab with login interface
+            const loginTabUrl = `${window.location.origin}/dashboard/test-browser/login?liveViewUrl=${encodeURIComponent(message.liveViewUrl)}`;
+            window.open(loginTabUrl, '_blank', 'width=1400,height=900,scrollbars=yes,resizable=yes');
+            setShowManualModal(false);
           } else if (message.type === 'automation_complete') {
             setAutomationRunning(false);
             setAutomationComplete(true);

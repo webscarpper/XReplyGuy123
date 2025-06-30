@@ -12,6 +12,7 @@ import LiveAutomation from "@/pages/live-automation";
 import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
 import TestBrowser from "@/pages/test-browser";
+import BrowserLogin from "@/pages/browser-login";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -26,6 +27,7 @@ function Router() {
       <Route path="/dashboard/analytics" component={Analytics} />
       <Route path="/dashboard/settings" component={Settings} />
       <Route path="/dashboard/test-browser" component={TestBrowser} />
+      <Route path="/dashboard/test-browser/login" component={BrowserLogin} />
       <Route component={NotFound} />
     </Switch>
   );
