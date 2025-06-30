@@ -12,13 +12,32 @@ export default function BrowserLogin() {
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
-    // Get live view URL from query parameters
+    // Try to get live view URL from query parameters first
     const urlParams = new URLSearchParams(window.location.search);
-    const url = urlParams.get('liveViewUrl');
-    if (url) {
-      setLiveViewUrl(decodeURIComponent(url));
+    const queryUrl = urlParams.get('liveViewUrl');
+    if (queryUrl) {
+      setLiveViewUrl(decodeURIComponent(queryUrl));
+    } else {
+      // Fallback: fetch live view URL from backend
+      fetchLiveViewUrl();
     }
   }, []);
+
+  const fetchLiveViewUrl = async () => {
+    try {
+      const response = await fetch('/api/test-browser/live-view-url');
+      const result = await response.json();
+      
+      if (result.success && result.liveViewUrl) {
+        setLiveViewUrl(result.liveViewUrl);
+      } else {
+        setError('Unable to load live browser view');
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch live view URL:', err);
+      setError('Failed to connect to browser session');
+    }
+  };
 
   const continueAutomation = async () => {
     setContinuingAutomation(true);
@@ -111,19 +130,39 @@ export default function BrowserLogin() {
                 </CardHeader>
                 <CardContent>
                   {liveViewUrl ? (
-                    <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                    <div className="aspect-video bg-black rounded-lg overflow-hidden relative">
                       <iframe
                         src={liveViewUrl}
                         className="w-full h-full border-0"
                         title="Live Browser View"
-                        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+                        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-top-navigation"
+                        allow="camera; microphone; geolocation"
+                        onLoad={() => console.log('Iframe loaded successfully')}
+                        onError={(e) => {
+                          console.error('Iframe error:', e);
+                          setError('Failed to load live browser view');
+                        }}
                       />
+                      <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded text-xs">
+                        Live
+                      </div>
                     </div>
                   ) : (
                     <div className="aspect-video bg-slate-900 rounded-lg flex items-center justify-center">
                       <div className="text-center text-slate-400">
                         <div className="animate-spin w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-4"></div>
                         <p>Loading live browser view...</p>
+                        {error && (
+                          <div className="mt-4 text-red-400 text-sm">
+                            {error}
+                            <button 
+                              onClick={fetchLiveViewUrl}
+                              className="block mx-auto mt-2 text-purple-400 hover:text-purple-300 underline"
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

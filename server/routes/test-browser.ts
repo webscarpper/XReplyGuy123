@@ -577,6 +577,35 @@ router.delete("/session", async (req, res) => {
   }
 });
 
+// Get current live view URL
+router.get("/live-view-url", async (req, res) => {
+  try {
+    if (!testPage || !testClient || !isConnected) {
+      return res.json({ success: false, message: 'No active browser session' });
+    }
+
+    // If we don't have a live view URL yet, generate one
+    if (!liveViewUrl) {
+      try {
+        liveViewUrl = await openDevtools(testPage, testClient);
+        console.log("Generated new live view URL:", liveViewUrl);
+      } catch (error: any) {
+        console.error("Failed to generate live view URL:", error);
+        return res.json({ success: false, message: 'Failed to generate live view URL' });
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      liveViewUrl: liveViewUrl,
+      message: 'Live view URL retrieved successfully' 
+    });
+  } catch (error: any) {
+    console.error('Get live view URL error:', error);
+    res.json({ success: false, message: 'Error retrieving live view URL', error: error.message });
+  }
+});
+
 // Continue automation after manual login
 router.post("/continue-automation", async (req, res) => {
   try {
@@ -726,11 +755,19 @@ router.post("/test-automation", async (req, res) => {
     // STEP 2: Start live streaming and open login tab
     console.log("STEP 2: Starting live stream and opening login tab...");
     
-    // Start streaming automatically
+    // Start streaming automatically and get live view URL
     await startScreenStreaming();
     
+    // Wait a moment for live view URL to be generated
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
     // Get the current live view URL for the tab
-    const currentLiveViewUrl = liveViewUrl || 'https://cdn.brightdata.com/static/devtools/136/inspector.html';
+    const currentLiveViewUrl = liveViewUrl || await openDevtools(testPage, testClient);
+    
+    // Store the live view URL globally
+    liveViewUrl = currentLiveViewUrl;
+    
+    console.log("Using live view URL for login tab:", currentLiveViewUrl);
     
     // Send request to open new tab with live browser
     streamingSockets.forEach(ws => {
