@@ -48,6 +48,8 @@ export default function TestBrowser() {
   const [automationRunning, setAutomationRunning] = useState(false);
   const [automationStatus, setAutomationStatus] = useState<string>('');
   const [automationProgress, setAutomationProgress] = useState<number>(0);
+  const [twitterUsername, setTwitterUsername] = useState<string>('');
+  const [twitterPassword, setTwitterPassword] = useState<string>('');
   const [automationStep, setAutomationStep] = useState<number>(0);
   const [automationTotalSteps, setAutomationTotalSteps] = useState<number>(8);
   const [automationMessage, setAutomationMessage] = useState<string>('');
@@ -338,12 +340,23 @@ export default function TestBrowser() {
       return;
     }
 
+    if (!twitterUsername.trim() || !twitterPassword.trim()) {
+      alert('Please enter your Twitter username and password before starting automation');
+      return;
+    }
+
     setLoading(true);
     resetAutomationState();
     setAutomationRunning(true);
     
     try {
-      const result = await apiRequest('/test-automation', { method: 'POST' });
+      const result = await apiRequest('/test-automation', { 
+        method: 'POST',
+        body: JSON.stringify({ 
+          username: twitterUsername, 
+          password: twitterPassword 
+        })
+      });
       
       if (!result.success) {
         setAutomationError(result.message || 'Automation failed');
@@ -612,6 +625,36 @@ export default function TestBrowser() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Twitter Credentials Form */}
+            <div className="grid grid-cols-2 gap-4 p-4 bg-[hsl(0,0%,12%)] border border-[hsl(0,0%,25%)] rounded-lg">
+              <div className="space-y-2">
+                <Label htmlFor="twitter-username" className="text-sm font-medium text-gray-300">
+                  X/Twitter Username
+                </Label>
+                <Input
+                  id="twitter-username"
+                  type="text"
+                  placeholder="Enter username or email"
+                  value={twitterUsername}
+                  onChange={(e) => setTwitterUsername(e.target.value)}
+                  className="bg-[hsl(0,0%,8%)] border-[hsl(0,0%,30%)] text-white"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="twitter-password" className="text-sm font-medium text-gray-300">
+                  Password
+                </Label>
+                <Input
+                  id="twitter-password"
+                  type="password"
+                  placeholder="Enter password"
+                  value={twitterPassword}
+                  onChange={(e) => setTwitterPassword(e.target.value)}
+                  className="bg-[hsl(0,0%,8%)] border-[hsl(0,0%,30%)] text-white"
+                />
+              </div>
+            </div>
+
             {/* Main Automation Button */}
             <div className="text-center">
               <Button 

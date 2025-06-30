@@ -787,7 +787,15 @@ router.post("/test-automation", async (req, res) => {
       });
     }
 
-    console.log("Starting comprehensive X/Twitter automation...");
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Username and password are required for automation"
+      });
+    }
+
+    console.log("Starting comprehensive X/Twitter automation with automated login...");
 
     // Send initial status
     streamingSockets.forEach(ws => {
@@ -821,120 +829,185 @@ router.post("/test-automation", async (req, res) => {
       timeout: 30000 
     });
 
-    // STEP 2: Start live streaming and open login tab
-    console.log("STEP 2: Starting live stream and opening login tab...");
-    
-    // Start streaming automatically and get live view URL
-    await startScreenStreaming();
-    
-    // Wait a moment for live view URL to be generated
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Get the current live view URL for the tab
-    const currentLiveViewUrl = liveViewUrl || await openDevtools(testPage, testClient);
-    
-    // Store the live view URL globally
-    liveViewUrl = currentLiveViewUrl;
-    
-    console.log("Using live view URL for login tab:", currentLiveViewUrl);
-    
-    // Send request to open new tab with live browser
+    // STEP 2: Automated Login
+    console.log("STEP 2: Performing automated login...");
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
-          type: 'open_login_tab',
-          liveViewUrl: currentLiveViewUrl,
-          message: 'Opening live browser tab for manual login',
-          instructions: 'A new tab will open with the live browser. Please log in to X/Twitter there and click "Continue Automation" when done.'
+          type: 'automation_progress',
+          currentAction: 'Performing automated login',
+          progress: 25,
+          nextStep: 'Filling in credentials'
         }));
       }
     });
 
-    // STEP 3: Login Detection Loop
-    console.log("STEP 3: Waiting for login completion...");
-    let loginDetected = false;
-    let attempts = 0;
-    const maxAttempts = 100; // 5 minutes (3 second intervals)
-
-    while (!loginDetected && attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      attempts++;
-
-      try {
-        const currentUrl = await testPage.url();
-        const loginSuccess = await testPage.evaluate(() => {
-          // Check for multiple indicators of successful login
-          const homeButton = document.querySelector('[data-testid="AppTabBar_Home_Link"]');
-          const profileButton = document.querySelector('[data-testid="AppTabBar_Profile_Link"]');
-          const composeButton = document.querySelector('[data-testid="SideNav_NewTweet_Button"]');
-          const tweetComposer = document.querySelector('[data-testid="tweetTextarea_0"]');
-          const posts = document.querySelectorAll('[data-testid="tweet"]');
-          const userAvatar = document.querySelector('[data-testid="DashButton_ProfileIcon_Link"]');
-          const sideNav = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
-          
-          // Check URL patterns
-          const urlIndicators = window.location.href.includes('/home') || 
-                               window.location.href.includes('x.com') && !window.location.href.includes('/login') &&
-                               !window.location.href.includes('/i/flow');
-          
-          // Check for tweet timeline content
-          const hasContent = posts.length > 0 || !!tweetComposer;
-          
-          console.log('Login detection:', {
-            homeButton: !!homeButton,
-            profileButton: !!profileButton,
-            composeButton: !!composeButton,
-            posts: posts.length,
-            userAvatar: !!userAvatar,
-            sideNav: !!sideNav,
-            url: window.location.href,
-            urlIndicators,
-            hasContent
-          });
-          
-          return !!(homeButton || profileButton || composeButton || userAvatar || sideNav || (urlIndicators && hasContent));
-        });
-
-        if (loginSuccess || currentUrl.includes('/home') || (currentUrl.includes('x.com') && !currentUrl.includes('/login'))) {
-          loginDetected = true;
-          console.log("Login detected successfully!");
-          
-          streamingSockets.forEach(ws => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'automation_status',
-                status: 'login_detected',
-                message: 'Login successful! Continuing automation...',
-                step: 3,
-                totalSteps: 8,
-                estimatedTime: '3-5 minutes remaining'
-              }));
-            }
-          });
-        } else {
-          // Send periodic status updates
-          if (attempts % 10 === 0) {
-            streamingSockets.forEach(ws => {
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                  type: 'automation_status',
-                  status: 'waiting_login',
-                  message: `Waiting for login... (${Math.floor(attempts * 3 / 60)}:${(attempts * 3 % 60).toString().padStart(2, '0')})`,
-                  step: 3,
-                  totalSteps: 8
-                }));
-              }
-            });
-          }
+    // Wait for page to load completely
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    try {
+      // Try multiple possible username field selectors
+      const usernameSelectors = [
+        'input[name="text"]',
+        'input[autocomplete="username"]', 
+        'input[data-testid="ocfEnterTextTextInput"]',
+        'input[placeholder*="username" i]',
+        'input[placeholder*="email" i]',
+        'input[placeholder*="phone" i]'
+      ];
+      
+      let usernameField = null;
+      for (const selector of usernameSelectors) {
+        try {
+          await testPage.waitForSelector(selector, { timeout: 5000 });
+          usernameField = selector;
+          break;
+        } catch (e) {
+          continue;
         }
-      } catch (error) {
-        console.log("Login check error:", error);
       }
+      
+      if (!usernameField) {
+        throw new Error('Could not find username input field');
+      }
+      
+      console.log(`Found username field: ${usernameField}`);
+      
+      // Clear and fill username
+      await testPage.click(usernameField);
+      await testPage.keyboard.down('Control');
+      await testPage.keyboard.press('a');
+      await testPage.keyboard.up('Control');
+      await testPage.keyboard.type(username);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Find and click Next button
+      const nextSelectors = [
+        '[data-testid="ocfEnterTextNextButton"]',
+        'button[type="button"]'
+      ];
+      
+      let nextClicked = false;
+      for (const selector of nextSelectors) {
+        try {
+          await testPage.waitForSelector(selector, { timeout: 3000 });
+          await testPage.click(selector);
+          nextClicked = true;
+          console.log(`Clicked next button: ${selector}`);
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!nextClicked) {
+        // Try pressing Enter as fallback
+        await testPage.keyboard.press('Enter');
+        console.log('Pressed Enter as fallback for next button');
+      }
+      
+      // Wait for password field to appear
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      const passwordSelectors = [
+        'input[name="password"]',
+        'input[type="password"]',
+        'input[data-testid="ocfEnterTextTextInput"]',
+        'input[placeholder*="password" i]'
+      ];
+      
+      let passwordField = null;
+      for (const selector of passwordSelectors) {
+        try {
+          await testPage.waitForSelector(selector, { timeout: 5000 });
+          passwordField = selector;
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!passwordField) {
+        throw new Error('Could not find password input field');
+      }
+      
+      console.log(`Found password field: ${passwordField}`);
+      
+      // Clear and fill password
+      await testPage.click(passwordField);
+      await testPage.keyboard.down('Control');
+      await testPage.keyboard.press('a');
+      await testPage.keyboard.up('Control');
+      await testPage.keyboard.type(password);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Find and click Login button
+      const loginSelectors = [
+        '[data-testid="LoginForm_Login_Button"]',
+        'button[type="submit"]'
+      ];
+      
+      let loginClicked = false;
+      for (const selector of loginSelectors) {
+        try {
+          await testPage.waitForSelector(selector, { timeout: 3000 });
+          await testPage.click(selector);
+          loginClicked = true;
+          console.log(`Clicked login button: ${selector}`);
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!loginClicked) {
+        // Try pressing Enter as fallback
+        await testPage.keyboard.press('Enter');
+        console.log('Pressed Enter as fallback for login button');
+      }
+      
+      // Wait for login to complete
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      console.log('Automated login completed');
+      
+    } catch (error: any) {
+      console.error('Automated login failed:', error);
+      throw new Error(`Automated login failed: ${error.message}`);
     }
 
-    if (!loginDetected) {
-      throw new Error("Login timeout - please try again");
+    // STEP 3: Verify login success
+    console.log("STEP 3: Verifying login success...");
+    streamingSockets.forEach(ws => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'automation_progress',
+          currentAction: 'Verifying login success',
+          progress: 37.5,
+          nextStep: 'Continuing to homepage'
+        }));
+      }
+    });
+
+    const currentUrl = await testPage.url();
+    console.log(`Login verification - current URL: ${currentUrl}`);
+    
+    // Check if we successfully logged in
+    const loginSuccess = await testPage.evaluate(() => {
+      const homeButton = document.querySelector('[data-testid="AppTabBar_Home_Link"]');
+      const profileButton = document.querySelector('[data-testid="AppTabBar_Profile_Link"]');
+      const composeButton = document.querySelector('[data-testid="SideNav_NewTweet_Button"]');
+      const urlIndicators = window.location.href.includes('/home') || 
+                           (window.location.href.includes('x.com') && !window.location.href.includes('/login') &&
+                           !window.location.href.includes('/i/flow'));
+      
+      return !!(homeButton || profileButton || composeButton || urlIndicators);
+    });
+
+    if (!loginSuccess && !currentUrl.includes('/home')) {
+      throw new Error("Login verification failed - please check credentials");
     }
+
+    console.log("Login verified successfully!");
 
     // STEP 4: Navigate to home feed
     console.log("STEP 4: Navigating to home feed...");
