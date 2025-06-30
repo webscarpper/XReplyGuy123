@@ -576,6 +576,61 @@ router.delete("/session", async (req, res) => {
   }
 });
 
+// Force login detection check
+router.post("/check-login", async (req, res) => {
+  try {
+    if (!testPage) {
+      return res.json({ success: false, message: 'No browser session active' });
+    }
+
+    const currentUrl = await testPage.url();
+    const loginSuccess = await testPage.evaluate(() => {
+      // Check for multiple indicators of successful login
+      const homeButton = document.querySelector('[data-testid="AppTabBar_Home_Link"]');
+      const profileButton = document.querySelector('[data-testid="AppTabBar_Profile_Link"]');
+      const composeButton = document.querySelector('[data-testid="SideNav_NewTweet_Button"]');
+      const tweetComposer = document.querySelector('[data-testid="tweetTextarea_0"]');
+      const posts = document.querySelectorAll('[data-testid="tweet"]');
+      const userAvatar = document.querySelector('[data-testid="DashButton_ProfileIcon_Link"]');
+      const sideNav = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+      
+      // Check URL patterns
+      const urlIndicators = window.location.href.includes('/home') || 
+                           window.location.href.includes('x.com') && !window.location.href.includes('/login') &&
+                           !window.location.href.includes('/i/flow');
+      
+      // Check for tweet timeline content
+      const hasContent = posts.length > 0 || !!tweetComposer;
+      
+      return {
+        loginDetected: !!(homeButton || profileButton || composeButton || userAvatar || sideNav || (urlIndicators && hasContent)),
+        indicators: {
+          homeButton: !!homeButton,
+          profileButton: !!profileButton,
+          composeButton: !!composeButton,
+          posts: posts.length,
+          userAvatar: !!userAvatar,
+          sideNav: !!sideNav,
+          url: window.location.href,
+          urlIndicators,
+          hasContent
+        }
+      };
+    });
+
+    res.json({ 
+      success: true, 
+      loginDetected: loginSuccess.loginDetected,
+      message: loginSuccess.loginDetected ? 'Login detected successfully!' : 'Login not detected yet',
+      indicators: loginSuccess.indicators,
+      currentUrl
+    });
+  } catch (error) {
+    console.error('Login check error:', error);
+    res.json({ success: false, message: 'Error checking login status', error: error.message });
+  }
+});
+
 // Test Automation - Complete X/Twitter automation flow
 router.post("/test-automation", async (req, res) => {
   try {
@@ -649,14 +704,39 @@ router.post("/test-automation", async (req, res) => {
       try {
         const currentUrl = await testPage.url();
         const loginSuccess = await testPage.evaluate(() => {
+          // Check for multiple indicators of successful login
           const homeButton = document.querySelector('[data-testid="AppTabBar_Home_Link"]');
           const profileButton = document.querySelector('[data-testid="AppTabBar_Profile_Link"]');
           const composeButton = document.querySelector('[data-testid="SideNav_NewTweet_Button"]');
-          const homeIndicator = window.location.href.includes('/home');
-          return !!(homeButton || profileButton || composeButton || homeIndicator);
+          const tweetComposer = document.querySelector('[data-testid="tweetTextarea_0"]');
+          const posts = document.querySelectorAll('[data-testid="tweet"]');
+          const userAvatar = document.querySelector('[data-testid="DashButton_ProfileIcon_Link"]');
+          const sideNav = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+          
+          // Check URL patterns
+          const urlIndicators = window.location.href.includes('/home') || 
+                               window.location.href.includes('x.com') && !window.location.href.includes('/login') &&
+                               !window.location.href.includes('/i/flow');
+          
+          // Check for tweet timeline content
+          const hasContent = posts.length > 0 || !!tweetComposer;
+          
+          console.log('Login detection:', {
+            homeButton: !!homeButton,
+            profileButton: !!profileButton,
+            composeButton: !!composeButton,
+            posts: posts.length,
+            userAvatar: !!userAvatar,
+            sideNav: !!sideNav,
+            url: window.location.href,
+            urlIndicators,
+            hasContent
+          });
+          
+          return !!(homeButton || profileButton || composeButton || userAvatar || sideNav || (urlIndicators && hasContent));
         });
 
-        if (loginSuccess || currentUrl.includes('/home')) {
+        if (loginSuccess || currentUrl.includes('/home') || (currentUrl.includes('x.com') && !currentUrl.includes('/login'))) {
           loginDetected = true;
           console.log("Login detected successfully!");
           

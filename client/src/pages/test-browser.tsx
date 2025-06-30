@@ -724,13 +724,13 @@ export default function TestBrowser() {
                   </Button>
                   
                   <Button 
-                    onClick={openManualDevTools}
+                    onClick={checkLoginStatus}
                     variant="outline"
                     className="px-6 py-3"
                     size="lg"
                   >
                     <Monitor className="h-5 w-5 mr-2" />
-                    Open Advanced DevTools
+                    Check Login Status
                   </Button>
                 </div>
                 
