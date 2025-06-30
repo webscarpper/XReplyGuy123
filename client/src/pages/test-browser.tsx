@@ -708,23 +708,40 @@ export default function TestBrowser() {
                 <Monitor className="h-16 w-16 mx-auto mb-4 text-blue-400" />
                 <h2 className="text-2xl font-bold mb-4">Manual Login Required</h2>
                 <p className="text-gray-300 mb-6 text-lg">
-                  Please log in to X/Twitter using the Chrome DevTools interface. 
-                  Automation will continue automatically after login detection.
+                  The browser has navigated to X/Twitter login page. Please complete the login process manually. 
+                  The automation will detect when you're logged in and continue automatically.
                 </p>
                 
-                <Button 
-                  onClick={openManualDevTools}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-lg mb-4"
-                  size="lg"
-                >
-                  <Monitor className="h-5 w-5 mr-2" />
-                  Open Chrome DevTools for Login
-                </Button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <Button 
+                    onClick={() => startTestAutomation()}
+                    disabled={isStreaming}
+                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-3"
+                    size="lg"
+                  >
+                    <Play className="h-5 w-5 mr-2" />
+                    Start Live Stream & Login
+                  </Button>
+                  
+                  <Button 
+                    onClick={openManualDevTools}
+                    variant="outline"
+                    className="px-6 py-3"
+                    size="lg"
+                  >
+                    <Monitor className="h-5 w-5 mr-2" />
+                    Open Advanced DevTools
+                  </Button>
+                </div>
                 
                 <div className="mt-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                  <p className="text-yellow-300 text-sm">
-                    {manualInstructions}
-                  </p>
+                  <h4 className="text-yellow-300 font-medium mb-2">Quick Instructions:</h4>
+                  <div className="text-yellow-200 text-sm space-y-1">
+                    <p>1. Start the live stream above to see the browser</p>
+                    <p>2. Enter your X/Twitter login credentials</p>
+                    <p>3. Complete any 2FA or verification steps</p>
+                    <p>4. Automation will continue once logged in</p>
+                  </div>
                 </div>
                 
                 <div className="mt-6 text-center">

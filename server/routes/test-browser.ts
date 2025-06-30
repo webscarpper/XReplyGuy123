@@ -620,20 +620,18 @@ router.post("/test-automation", async (req, res) => {
       timeout: 30000 
     });
 
-    // STEP 2: Manual Login Handoff using Page.inspect
+    // STEP 2: Manual Login Handoff - Simplified approach
     console.log("STEP 2: Setting up manual login handoff...");
-    const client = await testPage.target().createCDPSession();
-    const {frameTree: {frame}} = await client.send('Page.getFrameTree', {});
-    const {url: inspectUrl} = await client.send('Page.inspect', {frameId: frame.id});
-
-    // Send manual intervention request
+    
+    // Send manual intervention request with current page URL
+    const currentUrl = await testPage.url();
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'manual_intervention',
-          inspectUrl: inspectUrl,
-          message: 'Please log in manually using Chrome DevTools',
-          instructions: 'Open the Chrome DevTools link and log in to X/Twitter. Automation will continue automatically after login detection.'
+          inspectUrl: currentUrl,
+          message: 'Please log in manually in the main browser window',
+          instructions: 'The browser should have navigated to X login page. Please log in manually using your credentials. The automation will detect when you complete login and continue automatically.'
         }));
       }
     });
