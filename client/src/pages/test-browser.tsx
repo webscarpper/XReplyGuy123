@@ -561,6 +561,185 @@ export default function TestBrowser() {
           </Card>
         </div>
 
+        {/* Test Automation Section */}
+        <Card className="bg-[hsl(0,0%,8%)] border-[hsl(0,0%,20%)]">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <RefreshCw className="h-5 w-5" />
+              <span>X/Twitter Test Automation</span>
+              {automationRunning && (
+                <Badge variant="outline" className="text-green-400 border-green-400">
+                  Running
+                </Badge>
+              )}
+              {automationComplete && (
+                <Badge variant="outline" className="text-blue-400 border-blue-400">
+                  Complete
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              Comprehensive automated testing: login, browse, interact with posts, like, and reply
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Main Automation Button */}
+            <div className="text-center">
+              <Button 
+                onClick={startTestAutomation}
+                disabled={loading || automationRunning || !status.isConnected}
+                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-8 py-4 text-lg font-semibold"
+                size="lg"
+              >
+                {automationRunning ? (
+                  <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+                ) : (
+                  <Play className="h-5 w-5 mr-2" />
+                )}
+                {automationRunning ? "Automation Running..." : "Start Test Automation"}
+              </Button>
+              
+              {automationRunning && (
+                <Button 
+                  onClick={stopAutomation}
+                  variant="destructive"
+                  className="ml-4 px-6 py-4"
+                  size="lg"
+                >
+                  <Square className="h-4 w-4 mr-2" />
+                  Stop
+                </Button>
+              )}
+            </div>
+
+            {/* Progress Display */}
+            {(automationRunning || automationComplete || automationError) && (
+              <div className="bg-[hsl(0,0%,12%)] border border-[hsl(0,0%,25%)] rounded-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Automation Progress</h3>
+                  <span className="text-sm text-gray-400">
+                    Step {automationStep} of {automationTotalSteps}
+                  </span>
+                </div>
+                
+                {/* Progress Bar */}
+                <div className="w-full bg-gray-700 rounded-full h-3 mb-4">
+                  <div 
+                    className="bg-gradient-to-r from-purple-500 to-blue-500 h-3 rounded-full transition-all duration-500"
+                    style={{ width: `${automationProgress}%` }}
+                  ></div>
+                </div>
+                
+                {/* Status Message */}
+                <p className="text-center text-gray-300 mb-2">{automationMessage}</p>
+                
+                {estimatedTime && (
+                  <p className="text-center text-sm text-gray-400">
+                    Estimated time: {estimatedTime}
+                  </p>
+                )}
+                
+                {/* Error Display */}
+                {automationError && (
+                  <div className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <XCircle className="h-5 w-5 text-red-400" />
+                      <span className="text-red-400 font-medium">Automation Error</span>
+                    </div>
+                    <p className="text-red-300 mt-2">{automationError}</p>
+                  </div>
+                )}
+                
+                {/* Success Display */}
+                {automationComplete && (
+                  <div className="mt-4 p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle className="h-5 w-5 text-green-400" />
+                      <span className="text-green-400 font-medium">Automation Complete</span>
+                    </div>
+                    <p className="text-green-300 mt-2">Successfully completed all automation steps!</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Automation Steps Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className={`p-4 rounded-lg border ${automationStep >= 1 ? 'bg-blue-500/10 border-blue-500/30' : 'bg-gray-500/10 border-gray-500/30'}`}>
+                <div className="flex items-center space-x-2 mb-2">
+                  <div className={`w-3 h-3 rounded-full ${automationStep >= 1 ? 'bg-blue-400' : 'bg-gray-400'}`}></div>
+                  <span className="text-sm font-medium">Navigation</span>
+                </div>
+                <p className="text-xs text-gray-400">Navigate to X login</p>
+              </div>
+              
+              <div className={`p-4 rounded-lg border ${automationStep >= 3 ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-gray-500/10 border-gray-500/30'}`}>
+                <div className="flex items-center space-x-2 mb-2">
+                  <div className={`w-3 h-3 rounded-full ${automationStep >= 3 ? 'bg-yellow-400' : 'bg-gray-400'}`}></div>
+                  <span className="text-sm font-medium">Login</span>
+                </div>
+                <p className="text-xs text-gray-400">Manual login handoff</p>
+              </div>
+              
+              <div className={`p-4 rounded-lg border ${automationStep >= 5 ? 'bg-purple-500/10 border-purple-500/30' : 'bg-gray-500/10 border-gray-500/30'}`}>
+                <div className="flex items-center space-x-2 mb-2">
+                  <div className={`w-3 h-3 rounded-full ${automationStep >= 5 ? 'bg-purple-400' : 'bg-gray-400'}`}></div>
+                  <span className="text-sm font-medium">Posts</span>
+                </div>
+                <p className="text-xs text-gray-400">Find and select posts</p>
+              </div>
+              
+              <div className={`p-4 rounded-lg border ${automationStep >= 7 ? 'bg-green-500/10 border-green-500/30' : 'bg-gray-500/10 border-gray-500/30'}`}>
+                <div className="flex items-center space-x-2 mb-2">
+                  <div className={`w-3 h-3 rounded-full ${automationStep >= 7 ? 'bg-green-400' : 'bg-gray-400'}`}></div>
+                  <span className="text-sm font-medium">Interact</span>
+                </div>
+                <p className="text-xs text-gray-400">Like and reply to posts</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Manual Intervention Modal */}
+        {showManualModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-[hsl(0,0%,8%)] border border-[hsl(0,0%,20%)] rounded-lg p-8 max-w-2xl w-full mx-4">
+              <div className="text-center">
+                <Monitor className="h-16 w-16 mx-auto mb-4 text-blue-400" />
+                <h2 className="text-2xl font-bold mb-4">Manual Login Required</h2>
+                <p className="text-gray-300 mb-6 text-lg">
+                  Please log in to X/Twitter using the Chrome DevTools interface. 
+                  Automation will continue automatically after login detection.
+                </p>
+                
+                <Button 
+                  onClick={openManualDevTools}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-lg mb-4"
+                  size="lg"
+                >
+                  <Monitor className="h-5 w-5 mr-2" />
+                  Open Chrome DevTools for Login
+                </Button>
+                
+                <div className="mt-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                  <p className="text-yellow-300 text-sm">
+                    {manualInstructions}
+                  </p>
+                </div>
+                
+                <div className="mt-6 text-center">
+                  <p className="text-gray-400 text-sm">
+                    Waiting for login completion... This modal will close automatically.
+                  </p>
+                  <div className="flex justify-center mt-4">
+                    <RefreshCw className="h-5 w-5 animate-spin text-blue-400" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Live Browser View */}
         {(liveFrame || liveViewUrl) && (
           <Card className="bg-[hsl(0,0%,8%)] border-[hsl(0,0%,20%)]">
