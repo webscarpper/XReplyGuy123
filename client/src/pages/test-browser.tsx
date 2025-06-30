@@ -738,13 +738,17 @@ export default function TestBrowser() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   <Button 
-                    onClick={() => startTestAutomation()}
-                    disabled={isStreaming}
+                    onClick={async () => {
+                      if (!isStreaming) {
+                        await toggleStreaming();
+                      }
+                    }}
+                    disabled={loading}
                     className="bg-green-600 hover:bg-green-700 text-white px-6 py-3"
                     size="lg"
                   >
                     <Play className="h-5 w-5 mr-2" />
-                    Start Live Stream & Login
+                    {isStreaming ? "Stream Active - Login Now" : "Start Live Stream & Login"}
                   </Button>
                   
                   <Button 
