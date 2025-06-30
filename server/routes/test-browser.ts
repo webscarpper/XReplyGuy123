@@ -577,6 +577,36 @@ router.delete("/session", async (req, res) => {
   }
 });
 
+// Get current browser screenshot
+router.get("/screenshot", async (req, res) => {
+  try {
+    if (!testPage || !isConnected) {
+      return res.json({ success: false, message: 'No active browser session' });
+    }
+
+    // Take screenshot of current browser state
+    const screenshot = await testPage.screenshot({
+      encoding: 'base64',
+      fullPage: false,
+      type: 'png'
+    });
+
+    const currentUrl = await testPage.url();
+    const title = await testPage.title();
+
+    res.json({ 
+      success: true, 
+      screenshot: `data:image/png;base64,${screenshot}`,
+      currentUrl,
+      title,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('Screenshot error:', error);
+    res.json({ success: false, message: 'Error capturing screenshot', error: error.message });
+  }
+});
+
 // Get current live view URL
 router.get("/live-view-url", async (req, res) => {
   try {
@@ -618,11 +648,19 @@ router.post("/continue-automation", async (req, res) => {
     // Continue with post-login automation steps
     console.log("STEP 4: Proceeding with post-login automation...");
     
-    // Navigate to search and interact with posts
-    await testPage.goto('https://x.com/search?q=crypto%20AI%20automation&src=typed_query&f=live', {
-      waitUntil: 'networkidle0',
-      timeout: 30000
-    });
+    try {
+      // Check if browser session is still active
+      await testPage.evaluate(() => window.location.href);
+      
+      // Navigate to search and interact with posts
+      await testPage.goto('https://x.com/search?q=crypto%20AI%20automation&src=typed_query&f=live', {
+        waitUntil: 'networkidle0',
+        timeout: 30000
+      });
+    } catch (error: any) {
+      console.error("Browser session lost during continuation:", error);
+      throw new Error("Browser session disconnected. Please restart automation.");
+    }
     
     // Wait for posts to load and interact
     await new Promise(resolve => setTimeout(resolve, 3000));

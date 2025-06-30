@@ -10,6 +10,28 @@ export default function BrowserLogin() {
   const [continuingAutomation, setContinuingAutomation] = useState(false);
   const [automationContinued, setAutomationContinued] = useState(false);
   const [error, setError] = useState<string>('');
+  const [screenshot, setScreenshot] = useState<string>('');
+  const [browserInfo, setBrowserInfo] = useState<{url: string, title: string}>({url: '', title: ''});
+
+  const fetchScreenshot = async () => {
+    try {
+      const response = await fetch('/api/test-browser/screenshot');
+      const result = await response.json();
+      
+      if (result.success && result.screenshot) {
+        setScreenshot(result.screenshot);
+        setBrowserInfo({
+          url: result.currentUrl || '',
+          title: result.title || ''
+        });
+        setError(''); // Clear any previous errors
+      } else {
+        console.log('Screenshot not available:', result.message);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch screenshot:', err);
+    }
+  };
 
   useEffect(() => {
     // Try to get live view URL from query parameters first
@@ -21,6 +43,14 @@ export default function BrowserLogin() {
       // Fallback: fetch live view URL from backend
       fetchLiveViewUrl();
     }
+    
+    // Start fetching screenshots to show live browser state
+    fetchScreenshot();
+    
+    // Refresh screenshot every 3 seconds
+    const screenshotInterval = setInterval(fetchScreenshot, 3000);
+    
+    return () => clearInterval(screenshotInterval);
   }, []);
 
   const fetchLiveViewUrl = async () => {
@@ -131,20 +161,38 @@ export default function BrowserLogin() {
                 <CardContent>
                   {liveViewUrl ? (
                     <div className="aspect-video bg-black rounded-lg overflow-hidden relative">
-                      <iframe
-                        src={liveViewUrl}
-                        className="w-full h-full border-0"
-                        title="Live Browser View"
-                        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-top-navigation"
-                        allow="camera; microphone; geolocation"
-                        onLoad={() => console.log('Iframe loaded successfully')}
-                        onError={(e) => {
-                          console.error('Iframe error:', e);
-                          setError('Failed to load live browser view');
-                        }}
-                      />
-                      <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded text-xs">
-                        Live
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-center p-6">
+                        <div className="text-white mb-4">
+                          <h3 className="text-lg font-semibold mb-2">Live Browser Session Active</h3>
+                          <p className="text-slate-300 text-sm">
+                            The browser is running X/Twitter at: <span className="text-blue-400">x.com/i/flow/login</span>
+                          </p>
+                        </div>
+                        
+                        <div className="bg-slate-700 rounded-lg p-4 w-full max-w-md">
+                          <h4 className="text-white font-medium mb-2">Manual Login Instructions</h4>
+                          <p className="text-slate-300 text-sm mb-3">
+                            The live browser session is active but embedded view is restricted by Bright Data CORS policy.
+                          </p>
+                          <div className="space-y-2 text-sm text-slate-300 mb-4">
+                            <p>• Browser is navigated to X/Twitter login page</p>
+                            <p>• Login manually on your device using your X/Twitter account</p>
+                            <p>• Then click "Continue Automation" below</p>
+                          </div>
+                          <button
+                            onClick={() => window.open(liveViewUrl, 'liveBrowser', 'width=1400,height=900,scrollbars=yes,resizable=yes,menubar=no,toolbar=no')}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium mb-2"
+                          >
+                            Try Opening Live View
+                          </button>
+                          <p className="text-xs text-slate-400">
+                            If live view doesn't work, proceed with manual login on your device
+                          </p>
+                        </div>
+                        
+                        <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded text-xs">
+                          Live
+                        </div>
                       </div>
                     </div>
                   ) : (
