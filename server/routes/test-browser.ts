@@ -1098,4 +1098,175 @@ router.post("/test-automation", async (req, res) => {
   }
 });
 
+// Add automated login endpoint
+router.post("/automated-login", async (req, res) => {
+  try {
+    if (!testPage || !isConnected) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active browser session'
+      });
+    }
+
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username and password are required'
+      });
+    }
+
+    console.log('Starting automated X/Twitter login...');
+    
+    // Wait for page to load completely
+    await testPage.waitForLoadState('networkidle');
+    await testPage.waitForTimeout(3000);
+    
+    try {
+      // Try multiple possible username field selectors
+      const usernameSelectors = [
+        'input[name="text"]',
+        'input[autocomplete="username"]', 
+        'input[data-testid="ocfEnterTextTextInput"]',
+        'input[placeholder*="username" i]',
+        'input[placeholder*="email" i]',
+        'input[placeholder*="phone" i]'
+      ];
+      
+      let usernameField = null;
+      for (const selector of usernameSelectors) {
+        try {
+          await testPage.waitForSelector(selector, { timeout: 5000 });
+          usernameField = selector;
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!usernameField) {
+        throw new Error('Could not find username input field');
+      }
+      
+      console.log(`Found username field: ${usernameField}`);
+      
+      // Clear and fill username
+      await testPage.click(usernameField);
+      await testPage.keyboard.press('Control+a');
+      await testPage.keyboard.type(username);
+      await testPage.waitForTimeout(1000);
+      
+      // Find and click Next button
+      const nextSelectors = [
+        '[data-testid="ocfEnterTextNextButton"]',
+        'button:has-text("Next")',
+        '[role="button"]:has-text("Next")',
+        'button[type="button"]:has-text("Next")'
+      ];
+      
+      let nextClicked = false;
+      for (const selector of nextSelectors) {
+        try {
+          await testPage.waitForSelector(selector, { timeout: 3000 });
+          await testPage.click(selector);
+          nextClicked = true;
+          console.log(`Clicked next button: ${selector}`);
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!nextClicked) {
+        // Try pressing Enter as fallback
+        await testPage.keyboard.press('Enter');
+        console.log('Pressed Enter as fallback for next button');
+      }
+      
+      // Wait for password field to appear
+      await testPage.waitForTimeout(3000);
+      
+      const passwordSelectors = [
+        'input[name="password"]',
+        'input[type="password"]',
+        'input[data-testid="ocfEnterTextTextInput"]',
+        'input[placeholder*="password" i]'
+      ];
+      
+      let passwordField = null;
+      for (const selector of passwordSelectors) {
+        try {
+          await testPage.waitForSelector(selector, { timeout: 5000 });
+          passwordField = selector;
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!passwordField) {
+        throw new Error('Could not find password input field');
+      }
+      
+      console.log(`Found password field: ${passwordField}`);
+      
+      // Clear and fill password
+      await testPage.click(passwordField);
+      await testPage.keyboard.press('Control+a');
+      await testPage.keyboard.type(password);
+      await testPage.waitForTimeout(1000);
+      
+      // Find and click Login button
+      const loginSelectors = [
+        '[data-testid="LoginForm_Login_Button"]',
+        'button:has-text("Log in")',
+        '[role="button"]:has-text("Log in")',
+        'button[type="submit"]'
+      ];
+      
+      let loginClicked = false;
+      for (const selector of loginSelectors) {
+        try {
+          await testPage.waitForSelector(selector, { timeout: 3000 });
+          await testPage.click(selector);
+          loginClicked = true;
+          console.log(`Clicked login button: ${selector}`);
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!loginClicked) {
+        // Try pressing Enter as fallback
+        await testPage.keyboard.press('Enter');
+        console.log('Pressed Enter as fallback for login button');
+      }
+      
+      // Wait for login to complete and check for success
+      await testPage.waitForTimeout(5000);
+      
+      const currentUrl = testPage.url();
+      console.log(`Login completed, current URL: ${currentUrl}`);
+      
+      res.json({
+        success: true,
+        message: 'Automated login completed successfully',
+        currentUrl: currentUrl
+      });
+      
+    } catch (error: any) {
+      console.error('Login step failed:', error);
+      throw error;
+    }
+    
+  } catch (error: any) {
+    console.error('Automated login failed:', error);
+    res.status(500).json({
+      success: false,
+      message: `Automated login failed: ${error.message}`
+    });
+  }
+});
+
 export default router;

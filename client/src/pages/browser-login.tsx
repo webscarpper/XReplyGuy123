@@ -17,6 +17,10 @@ export default function BrowserLogin() {
   const [clicking, setClicking] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
   const [typeText, setTypeText] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showAutomatedLogin, setShowAutomatedLogin] = useState(false);
+  const [automatedLoginLoading, setAutomatedLoginLoading] = useState(false);
 
   const handleType = async () => {
     if (!typeText.trim()) return;
@@ -84,6 +88,42 @@ export default function BrowserLogin() {
     
     return () => clearInterval(screenshotInterval);
   }, []);
+
+  const handleAutomatedLogin = async () => {
+    if (!username.trim() || !password.trim()) {
+      setError('Please enter both username and password');
+      return;
+    }
+    
+    setAutomatedLoginLoading(true);
+    setError('');
+    
+    try {
+      const response = await fetch('/api/test-browser/automated-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setAutomationContinued(true);
+        fetchScreenshot(); // Refresh screenshot to show logged in state
+        // Clear credentials for security
+        setUsername('');
+        setPassword('');
+        setShowAutomatedLogin(false);
+      } else {
+        setError(result.message || 'Automated login failed');
+      }
+    } catch (err: any) {
+      setError('Failed to perform automated login');
+      console.error('Automated login error:', err);
+    } finally {
+      setAutomatedLoginLoading(false);
+    }
+  };
 
   const initializeBrowserSession = async () => {
     try {
