@@ -803,21 +803,37 @@ export default function TestBrowser() {
                 <Monitor className="h-5 w-5 text-yellow-400 mt-1" />
               </div>
               <div className="flex-1">
-                <h4 className="text-yellow-300 font-medium mb-1">Manual Password Entry Required</h4>
+                <h4 className="text-yellow-300 font-medium mb-1">Manual Login Required</h4>
                 <p className="text-yellow-200 text-sm mb-3">
-                  The password field is focused and ready. Please type your password in the live browser view below and click Login. Automation will continue automatically.
+                  {manualInstructions || 'Click the button below to open Chrome DevTools in a new window. Complete the login process there, then the automation will continue automatically.'}
                 </p>
-                <Button 
-                  onClick={() => {
-                    checkLoginStatus();
-                    setShowManualModal(false);
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                >
-                  Continue Automation
-                </Button>
+                <div className="flex space-x-2">
+                  <Button 
+                    onClick={() => {
+                      if (manualInspectUrl) {
+                        window.open(
+                          manualInspectUrl, 
+                          'bright-data-devtools',
+                          'width=1400,height=900,scrollbars=yes,resizable=yes,toolbar=no,menubar=no'
+                        );
+                      }
+                    }}
+                    variant="default"
+                    size="sm"
+                    className="text-xs bg-blue-600 hover:bg-blue-700"
+                    disabled={!manualInspectUrl}
+                  >
+                    Open Chrome DevTools
+                  </Button>
+                  <Button 
+                    onClick={() => setShowManualModal(false)}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                  >
+                    Hide
+                  </Button>
+                </div>
               </div>
               <button 
                 onClick={() => setShowManualModal(false)}
