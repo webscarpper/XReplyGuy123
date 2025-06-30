@@ -825,8 +825,8 @@ router.post("/test-automation", async (req, res) => {
     });
 
     await testPage.goto('https://x.com/i/flow/login', { 
-      waitUntil: 'networkidle0',
-      timeout: 30000 
+      waitUntil: 'domcontentloaded',
+      timeout: 60000 
     });
 
     // STEP 2: Automated Login
@@ -842,72 +842,109 @@ router.post("/test-automation", async (req, res) => {
       }
     });
 
-    // Wait for page to load completely
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Wait for page to load completely and X login form to be ready
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
     try {
-      // Try multiple possible username field selectors
+      console.log(`Attempting automated login with username: ${username}`);
+      
+      // Step 1: Find and fill username field
+      console.log('Step 1: Looking for username field...');
       const usernameSelectors = [
         'input[name="text"]',
         'input[autocomplete="username"]', 
         'input[data-testid="ocfEnterTextTextInput"]',
         'input[placeholder*="username" i]',
         'input[placeholder*="email" i]',
-        'input[placeholder*="phone" i]'
+        'input[placeholder*="phone" i]',
+        'input[type="text"]'
       ];
       
       let usernameField = null;
-      for (const selector of usernameSelectors) {
-        try {
-          await testPage.waitForSelector(selector, { timeout: 5000 });
-          usernameField = selector;
-          break;
-        } catch (e) {
-          continue;
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (!usernameField && attempts < maxAttempts) {
+        for (const selector of usernameSelectors) {
+          try {
+            await testPage.waitForSelector(selector, { timeout: 8000, visible: true });
+            // Check if field is actually visible and interactable
+            const isVisible = await testPage.evaluate((sel) => {
+              const el = document.querySelector(sel);
+              return el && el.offsetWidth > 0 && el.offsetHeight > 0;
+            }, selector);
+            
+            if (isVisible) {
+              usernameField = selector;
+              console.log(`Found username field: ${selector}`);
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (!usernameField) {
+          attempts++;
+          console.log(`Username field attempt ${attempts}/${maxAttempts} failed, waiting...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
         }
       }
       
       if (!usernameField) {
-        throw new Error('Could not find username input field');
+        throw new Error('Could not find username input field after multiple attempts');
       }
       
-      console.log(`Found username field: ${usernameField}`);
+      // Clear and fill username with slower typing
+      await testPage.focus(usernameField);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await testPage.evaluate((selector) => {
+        const input = document.querySelector(selector);
+        if (input) input.value = '';
+      }, usernameField);
       
-      // Clear and fill username
-      await testPage.click(usernameField);
-      await testPage.keyboard.down('Control');
-      await testPage.keyboard.press('a');
-      await testPage.keyboard.up('Control');
-      await testPage.keyboard.type(username);
+      await testPage.type(usernameField, username, { delay: 100 });
       await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log(`Username entered: ${username}`);
       
-      // Find and click Next button
+      // Step 2: Find and click Next button
+      console.log('Step 2: Looking for Next button...');
       const nextSelectors = [
         '[data-testid="ocfEnterTextNextButton"]',
-        'button[type="button"]'
+        'button:has-text("Next")',
+        'div[role="button"]:has-text("Next")',
+        'button[type="button"]',
+        'div[role="button"]'
       ];
       
       let nextClicked = false;
       for (const selector of nextSelectors) {
         try {
-          await testPage.waitForSelector(selector, { timeout: 3000 });
-          await testPage.click(selector);
-          nextClicked = true;
-          console.log(`Clicked next button: ${selector}`);
-          break;
+          await testPage.waitForSelector(selector, { timeout: 5000, visible: true });
+          const isVisible = await testPage.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            return el && el.offsetWidth > 0 && el.offsetHeight > 0;
+          }, selector);
+          
+          if (isVisible) {
+            await testPage.click(selector);
+            nextClicked = true;
+            console.log(`Clicked next button: ${selector}`);
+            break;
+          }
         } catch (e) {
           continue;
         }
       }
       
       if (!nextClicked) {
-        // Try pressing Enter as fallback
+        console.log('Next button not found, trying Enter key...');
         await testPage.keyboard.press('Enter');
-        console.log('Pressed Enter as fallback for next button');
       }
       
-      // Wait for password field to appear
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Step 3: Wait for password field and fill it
+      console.log('Step 3: Waiting for password field...');
+      await new Promise(resolve => setTimeout(resolve, 4000));
       
       const passwordSelectors = [
         'input[name="password"]',
@@ -917,58 +954,88 @@ router.post("/test-automation", async (req, res) => {
       ];
       
       let passwordField = null;
-      for (const selector of passwordSelectors) {
-        try {
-          await testPage.waitForSelector(selector, { timeout: 5000 });
-          passwordField = selector;
-          break;
-        } catch (e) {
-          continue;
+      let passwordAttempts = 0;
+      
+      while (!passwordField && passwordAttempts < maxAttempts) {
+        for (const selector of passwordSelectors) {
+          try {
+            await testPage.waitForSelector(selector, { timeout: 8000, visible: true });
+            const isVisible = await testPage.evaluate((sel) => {
+              const el = document.querySelector(sel);
+              return el && el.offsetWidth > 0 && el.offsetHeight > 0;
+            }, selector);
+            
+            if (isVisible) {
+              passwordField = selector;
+              console.log(`Found password field: ${selector}`);
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (!passwordField) {
+          passwordAttempts++;
+          console.log(`Password field attempt ${passwordAttempts}/${maxAttempts} failed, waiting...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
         }
       }
       
       if (!passwordField) {
-        throw new Error('Could not find password input field');
+        throw new Error('Could not find password input field after multiple attempts');
       }
       
-      console.log(`Found password field: ${passwordField}`);
-      
       // Clear and fill password
-      await testPage.click(passwordField);
-      await testPage.keyboard.down('Control');
-      await testPage.keyboard.press('a');
-      await testPage.keyboard.up('Control');
-      await testPage.keyboard.type(password);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await testPage.focus(passwordField);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await testPage.evaluate((selector) => {
+        const input = document.querySelector(selector);
+        if (input) input.value = '';
+      }, passwordField);
       
-      // Find and click Login button
+      await testPage.type(passwordField, password, { delay: 100 });
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('Password entered');
+      
+      // Step 4: Find and click Login button
+      console.log('Step 4: Looking for Login button...');
       const loginSelectors = [
         '[data-testid="LoginForm_Login_Button"]',
-        'button[type="submit"]'
+        'button:has-text("Log in")',
+        'div[role="button"]:has-text("Log in")',
+        'button[type="submit"]',
+        'div[role="button"]'
       ];
       
       let loginClicked = false;
       for (const selector of loginSelectors) {
         try {
-          await testPage.waitForSelector(selector, { timeout: 3000 });
-          await testPage.click(selector);
-          loginClicked = true;
-          console.log(`Clicked login button: ${selector}`);
-          break;
+          await testPage.waitForSelector(selector, { timeout: 5000, visible: true });
+          const isVisible = await testPage.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            return el && el.offsetWidth > 0 && el.offsetHeight > 0;
+          }, selector);
+          
+          if (isVisible) {
+            await testPage.click(selector);
+            loginClicked = true;
+            console.log(`Clicked login button: ${selector}`);
+            break;
+          }
         } catch (e) {
           continue;
         }
       }
       
       if (!loginClicked) {
-        // Try pressing Enter as fallback
+        console.log('Login button not found, trying Enter key...');
         await testPage.keyboard.press('Enter');
-        console.log('Pressed Enter as fallback for login button');
       }
       
       // Wait for login to complete
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      console.log('Automated login completed');
+      await new Promise(resolve => setTimeout(resolve, 8000));
+      console.log('Automated login process completed');
       
     } catch (error: any) {
       console.error('Automated login failed:', error);
@@ -1130,7 +1197,7 @@ router.post("/test-automation", async (req, res) => {
           type: 'automation_complete',
           success: true,
           summary: 'Successfully completed X/Twitter automation: navigated, logged in, found posts, liked, and replied',
-          totalTime: `${Math.floor(attempts * 3 / 60)}:${(attempts * 3 % 60).toString().padStart(2, '0')}`,
+          totalTime: 'Automated login completed',
           progress: 100
         }));
       }
@@ -1145,7 +1212,7 @@ router.post("/test-automation", async (req, res) => {
         posts: `✓ Found ${posts.length} posts`,
         interactions: "✓ Liked and replied to post"
       },
-      totalTime: `${Math.floor(attempts * 3 / 60)}:${(attempts * 3 % 60).toString().padStart(2, '0')}`
+      totalTime: 'Automated login completed'
     });
 
   } catch (error: any) {
