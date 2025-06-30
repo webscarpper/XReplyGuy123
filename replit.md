@@ -140,6 +140,9 @@ Changelog:
 - June 29, 2025. Fixed browser display issues by correcting conditional rendering logic and improved iframe loading with proper error handling and visual feedback
 - June 29, 2025. Resolved CORS restrictions with Chrome DevTools iframe by implementing new window approach - users now get full DevTools interface in popup window for complete browser automation
 - June 29, 2025. Implemented comprehensive X/Twitter test automation system with 8-step workflow: navigation, manual login handoff via Page.inspect, automatic login detection, post interaction, liking, and replying capabilities with real-time WebSocket progress tracking
+- June 30, 2025. Completely redesigned live browser automation workflow - removed complex Chrome DevTools interface and implemented clean live streaming view that shows actual browser content directly in main interface
+- June 30, 2025. Automation now automatically starts live streaming when reaching login step, allowing direct interaction with X/Twitter login page through canvas-based control system
+- June 30, 2025. Simplified user experience: Start automation → live stream appears automatically → login manually in main view → automation continues automatically
 ```
 
 ## User Preferences
