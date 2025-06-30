@@ -12,6 +12,9 @@ export default function BrowserLogin() {
   const [error, setError] = useState<string>('');
   const [screenshot, setScreenshot] = useState<string>('');
   const [browserInfo, setBrowserInfo] = useState<{url: string, title: string}>({url: '', title: ''});
+  const [clicking, setClicking] = useState(false);
+  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [typeText, setTypeText] = useState('');
 
   const fetchScreenshot = async () => {
     try {
@@ -66,6 +69,38 @@ export default function BrowserLogin() {
     } catch (err: any) {
       console.error('Failed to fetch live view URL:', err);
       setError('Failed to connect to browser session');
+    }
+  };
+
+  const handleScreenshotClick = async (event: React.MouseEvent<HTMLImageElement>) => {
+    if (clicking) return;
+    
+    setClicking(true);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 1400; // Scale to browser width
+    const y = ((event.clientY - rect.top) / rect.height) * 900;   // Scale to browser height
+    
+    try {
+      const response = await fetch('/api/test-browser/control', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          type: 'click',
+          x: Math.round(x),
+          y: Math.round(y)
+        })
+      });
+      
+      const result = await response.json();
+      if (!result.success) {
+        console.error('Click failed:', result.message);
+      }
+    } catch (err: any) {
+      console.error('Click error:', err);
+    } finally {
+      setTimeout(() => setClicking(false), 500);
     }
   };
 
@@ -159,41 +194,31 @@ export default function BrowserLogin() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {liveViewUrl ? (
+                  {screenshot ? (
                     <div className="aspect-video bg-black rounded-lg overflow-hidden relative">
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-center p-6">
-                        <div className="text-white mb-4">
-                          <h3 className="text-lg font-semibold mb-2">Live Browser Session Active</h3>
-                          <p className="text-slate-300 text-sm">
-                            The browser is running X/Twitter at: <span className="text-blue-400">x.com/i/flow/login</span>
-                          </p>
-                        </div>
-                        
-                        <div className="bg-slate-700 rounded-lg p-4 w-full max-w-md">
-                          <h4 className="text-white font-medium mb-2">Manual Login Instructions</h4>
-                          <p className="text-slate-300 text-sm mb-3">
-                            The live browser session is active but embedded view is restricted by Bright Data CORS policy.
-                          </p>
-                          <div className="space-y-2 text-sm text-slate-300 mb-4">
-                            <p>• Browser is navigated to X/Twitter login page</p>
-                            <p>• Login manually on your device using your X/Twitter account</p>
-                            <p>• Then click "Continue Automation" below</p>
-                          </div>
-                          <button
-                            onClick={() => window.open(liveViewUrl, 'liveBrowser', 'width=1400,height=900,scrollbars=yes,resizable=yes,menubar=no,toolbar=no')}
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium mb-2"
-                          >
-                            Try Opening Live View
-                          </button>
-                          <p className="text-xs text-slate-400">
-                            If live view doesn't work, proceed with manual login on your device
-                          </p>
-                        </div>
-                        
-                        <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded text-xs">
-                          Live
-                        </div>
+                      <img 
+                        src={screenshot}
+                        alt="Live Browser View"
+                        className={`w-full h-full object-contain cursor-crosshair ${clicking ? 'opacity-75' : 'hover:opacity-90'}`}
+                        onClick={handleScreenshotClick}
+                        style={{ userSelect: 'none' }}
+                      />
+                      <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded text-xs">
+                        Live • Interactive
                       </div>
+                      <div className="absolute bottom-2 left-2 bg-black bg-opacity-75 text-white px-2 py-1 rounded text-xs">
+                        {browserInfo.url ? new URL(browserInfo.url).hostname : 'Loading...'}
+                      </div>
+                      <div className="absolute top-2 left-2 bg-blue-600 bg-opacity-75 text-white px-2 py-1 rounded text-xs">
+                        Click to interact
+                      </div>
+                      {clicking && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-20">
+                          <div className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                            Clicking...
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="aspect-video bg-slate-900 rounded-lg flex items-center justify-center">
