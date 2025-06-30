@@ -759,17 +759,16 @@ export default function TestBrowser() {
         )}
 
         {/* Live Browser View */}
-        {(liveFrame || liveViewUrl) && (
+        {isStreaming && (
           <Card className="bg-[hsl(0,0%,8%)] border-[hsl(0,0%,20%)]">
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Monitor className="h-5 w-5" />
                 <span>Live Browser View</span>
-                {isStreaming && (
-                  <Badge variant="default" className="ml-2 bg-green-500">
-                    Live
-                  </Badge>
-                )}
+                <Badge variant="default" className="ml-2 bg-green-500">
+                  <div className="w-2 h-2 bg-white rounded-full animate-pulse mr-2"></div>
+                  Live
+                </Badge>
               </CardTitle>
               <CardDescription>
                 {manualControlEnabled 
@@ -779,6 +778,21 @@ export default function TestBrowser() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="mb-4 flex justify-between items-center">
+                <div className="flex items-center space-x-2">
+                  <Badge variant="outline" className="text-green-400 border-green-400">20+ FPS</Badge>
+                  <Badge variant="outline" className="text-blue-400 border-blue-400">1400×900</Badge>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setManualControlEnabled(!manualControlEnabled)}
+                  className={manualControlEnabled ? "bg-green-500/20 border-green-500 text-green-400" : ""}
+                >
+                  {manualControlEnabled ? "Manual Control ON" : "Enable Manual Control"}
+                </Button>
+              </div>
+              
               <div 
                 className={`border border-[hsl(0,0%,25%)] rounded-lg overflow-hidden ${
                   manualControlEnabled ? 'cursor-crosshair' : 'cursor-default'
@@ -787,103 +801,48 @@ export default function TestBrowser() {
                 onKeyDown={manualControlEnabled ? handleKeyPress : undefined}
                 onWheel={manualControlEnabled ? handleScroll : undefined}
               >
-                {liveViewUrl ? (
+                {liveFrame ? (
                   <div className="relative">
-                    <div className="w-full bg-gray-900 border border-[hsl(0,0%,25%)] rounded-lg p-8 text-center" style={{ minHeight: '600px' }}>
-                      <Monitor className="h-16 w-16 mx-auto mb-4 text-blue-400" />
-                      <h3 className="text-xl font-semibold mb-4 text-white">Chrome DevTools Available</h3>
-                      <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
-                        The live Chrome DevTools interface is ready for full browser control. 
-                        Click the button below to open it in a new window with complete automation capabilities.
-                      </p>
-                      
-                      <Button 
-                        onClick={() => window.open(liveViewUrl, '_blank', 'width=1400,height=900,scrollbars=yes,resizable=yes')}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 text-lg mb-4"
-                        size="lg"
-                      >
-                        <Monitor className="h-5 w-5 mr-2" />
-                        Open Chrome DevTools
-                      </Button>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm">
-                        <div className="bg-blue-500/10 border border-blue-500/30 rounded p-3">
-                          <CheckCircle className="h-5 w-5 mx-auto mb-2 text-blue-400" />
-                          <p className="text-blue-300 font-medium">Full Browser Control</p>
-                          <p className="text-gray-400">Complete Chrome DevTools interface</p>
-                        </div>
-                        <div className="bg-green-500/10 border border-green-500/30 rounded p-3">
-                          <CheckCircle className="h-5 w-5 mx-auto mb-2 text-green-400" />
-                          <p className="text-green-300 font-medium">Live Automation</p>
-                          <p className="text-gray-400">Real-time browser interaction</p>
-                        </div>
-                        <div className="bg-purple-500/10 border border-purple-500/30 rounded p-3">
-                          <CheckCircle className="h-5 w-5 mx-auto mb-2 text-purple-400" />
-                          <p className="text-purple-300 font-medium">Undetectable</p>
-                          <p className="text-gray-400">Bright Data residential IPs</p>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                        <p className="text-yellow-300 text-sm">
-                          <strong>Pro Tip:</strong> Use the Console tab in DevTools to run custom JavaScript automation scripts.
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="absolute top-2 right-2 bg-green-500/20 border border-green-500 rounded px-2 py-1 text-xs text-green-400">
-                      Live Chrome DevTools Ready
-                    </div>
+                    <canvas
+                      ref={canvasRef}
+                      width={1400}
+                      height={900}
+                      onClick={manualControlEnabled ? handleCanvasClick : undefined}
+                      className="w-full h-auto bg-black"
+                      style={{ maxHeight: '80vh' }}
+                    />
+                    {clickIndicator && (
+                      <div 
+                        className="absolute w-4 h-4 border-2 border-red-500 rounded-full pointer-events-none animate-ping"
+                        style={{
+                          left: `${clickIndicator.x}px`,
+                          top: `${clickIndicator.y}px`,
+                          transform: 'translate(-50%, -50%)'
+                        }}
+                      />
+                    )}
                   </div>
                 ) : (
-                  <canvas
-                    ref={canvasRef}
-                    width={1400}
-                    height={900}
-                    onClick={manualControlEnabled ? handleCanvasClick : undefined}
-                    className="w-full h-auto bg-black"
-                    style={{ maxHeight: '80vh' }}
-                  />
+                  <div className="w-full bg-black rounded-lg flex items-center justify-center" style={{ minHeight: '600px' }}>
+                    <div className="text-center">
+                      <RefreshCw className="h-12 w-12 mx-auto mb-4 text-gray-400 animate-spin" />
+                      <p className="text-gray-400 text-lg">Loading live browser view...</p>
+                    </div>
+                  </div>
                 )}
               </div>
               
-              {manualControlEnabled && (
-                <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                  <div className="flex items-center space-x-4 text-sm text-blue-300">
-                    {liveViewUrl ? (
-                      <div className="text-center w-full">
-                        <div className="flex items-center justify-center space-x-2 mb-2">
-                          <Monitor className="h-4 w-4" />
-                          <span>Full browser control available in Chrome DevTools window</span>
-                        </div>
-                        <p className="text-xs text-gray-400">
-                          Use the Elements, Console, and Network tabs for complete automation control
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-center space-x-2">
-                          <Mouse className="h-4 w-4" />
-                          <span>Click to interact</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Keyboard className="h-4 w-4" />
-                          <span>Type to send keys</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RefreshCw className="h-4 w-4" />
-                          <span>Scroll with mouse wheel</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
+              {manualControlEnabled && liveFrame && (
+                <div className="mt-4 text-center text-sm text-gray-400">
+                  <p>Manual control enabled. Click on the browser to interact directly with the page.</p>
                 </div>
               )}
             </CardContent>
           </Card>
         )}
-        
-        {!liveFrame && !liveViewUrl && status.isConnected && (
+
+        {/* Start Streaming Section */}
+        {!isStreaming && status.isConnected && (
           <Card className="bg-[hsl(0,0%,8%)] border-[hsl(0,0%,20%)]">
             <CardContent className="p-8 text-center">
               <Monitor className="h-16 w-16 mx-auto mb-4 text-gray-400" />
