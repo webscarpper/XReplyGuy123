@@ -742,13 +742,15 @@ export default function TestBrowser() {
                       if (!isStreaming) {
                         await toggleStreaming();
                       }
+                      // Close modal and focus on live stream area
+                      setShowManualModal(false);
                     }}
                     disabled={loading}
                     className="bg-green-600 hover:bg-green-700 text-white px-6 py-3"
                     size="lg"
                   >
                     <Play className="h-5 w-5 mr-2" />
-                    {isStreaming ? "Stream Active - Login Now" : "Start Live Stream & Login"}
+                    {isStreaming ? "Show Browser & Login" : "Start Live Stream & Login"}
                   </Button>
                   
                   <Button 
