@@ -44,12 +44,41 @@ export default function TestBrowser() {
   const [clickIndicator, setClickIndicator] = useState<{x: number, y: number, id: number} | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Test Automation State
+  const [automationRunning, setAutomationRunning] = useState(false);
+  const [automationStatus, setAutomationStatus] = useState<string>('');
+  const [automationProgress, setAutomationProgress] = useState<number>(0);
+  const [automationStep, setAutomationStep] = useState<number>(0);
+  const [automationTotalSteps, setAutomationTotalSteps] = useState<number>(8);
+  const [automationMessage, setAutomationMessage] = useState<string>('');
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [manualInspectUrl, setManualInspectUrl] = useState<string>('');
+  const [manualInstructions, setManualInstructions] = useState<string>('');
+  const [automationComplete, setAutomationComplete] = useState(false);
+  const [automationError, setAutomationError] = useState<string>('');
+  const [estimatedTime, setEstimatedTime] = useState<string>('');
+
   const userToken = localStorage.getItem('xreplyguy_wallet');
 
   if (!userToken) {
     setLocation('/');
     return null;
   }
+
+  // Test Automation Helper Functions
+  const resetAutomationState = () => {
+    setAutomationRunning(false);
+    setAutomationStatus('');
+    setAutomationProgress(0);
+    setAutomationStep(0);
+    setAutomationMessage('');
+    setShowManualModal(false);
+    setManualInspectUrl('');
+    setManualInstructions('');
+    setAutomationComplete(false);
+    setAutomationError('');
+    setEstimatedTime('');
+  };
 
   // Check status on component mount
   useEffect(() => {
@@ -95,6 +124,36 @@ export default function TestBrowser() {
               setClickIndicator({ x: message.x, y: message.y, id });
               setTimeout(() => setClickIndicator(null), 1000);
             }
+          } else if (message.type === 'automation_status') {
+            setAutomationStatus(message.status);
+            setAutomationMessage(message.message);
+            setAutomationStep(message.step);
+            setAutomationTotalSteps(message.totalSteps);
+            setEstimatedTime(message.estimatedTime || '');
+            setAutomationRunning(true);
+          } else if (message.type === 'automation_progress') {
+            setAutomationProgress(message.progress);
+            setAutomationMessage(message.currentAction);
+          } else if (message.type === 'manual_intervention') {
+            setManualInspectUrl(message.inspectUrl);
+            setManualInstructions(message.instructions);
+            setShowManualModal(true);
+          } else if (message.type === 'automation_complete') {
+            setAutomationRunning(false);
+            setAutomationComplete(true);
+            setAutomationProgress(100);
+            setAutomationMessage(message.summary);
+            setTimeout(() => {
+              setAutomationComplete(false);
+              resetAutomationState();
+            }, 10000);
+          } else if (message.type === 'automation_error') {
+            setAutomationRunning(false);
+            setAutomationError(message.error);
+            setTimeout(() => {
+              setAutomationError('');
+              resetAutomationState();
+            }, 5000);
           }
         } catch (error) {
           console.error('WebSocket message error:', error);
@@ -257,11 +316,52 @@ export default function TestBrowser() {
       setLiveFrame(null);
       setIsStreaming(false);
       setManualControlEnabled(false);
+      resetAutomationState();
       await checkStatus();
     } catch (error: any) {
       console.error('Session close failed:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Additional Automation Functions
+
+  const startTestAutomation = async () => {
+    if (!status.isConnected) {
+      alert('Please connect to browser first');
+      return;
+    }
+
+    setLoading(true);
+    resetAutomationState();
+    setAutomationRunning(true);
+    
+    try {
+      const result = await apiRequest('/test-automation', { method: 'POST' });
+      
+      if (!result.success) {
+        setAutomationError(result.message || 'Automation failed');
+        setAutomationRunning(false);
+      }
+    } catch (error: any) {
+      console.error('Automation failed:', error);
+      setAutomationError('Failed to start automation');
+      setAutomationRunning(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const stopAutomation = async () => {
+    // Stop automation by closing session
+    await closeSession();
+    resetAutomationState();
+  };
+
+  const openManualDevTools = () => {
+    if (manualInspectUrl) {
+      window.open(manualInspectUrl, '_blank', 'width=1400,height=900,scrollbars=yes,resizable=yes');
     }
   };
 
