@@ -164,12 +164,19 @@ export default function TestBrowser() {
             // Automatically start live streaming when automation begins
             setIsStreaming(true);
             console.log('Live streaming activated for automation');
-          } else if (message.type === 'manual_password_required') {
-            // Show manual password entry instructions
+          } else if (message.type === 'manual_intervention') {
+            // Show manual intervention modal with DevTools URL
             setAutomationMessage(message.message);
             setManualInstructions(message.instructions);
+            setManualInspectUrl(message.inspectUrl);
             setShowManualModal(true);
-            console.log('Manual password entry required');
+            console.log('Manual intervention required - DevTools URL:', message.inspectUrl);
+          } else if (message.type === 'login_detected') {
+            // Close manual intervention modal and show success
+            setShowManualModal(false);
+            setAutomationMessage(message.message);
+            setAutomationStep(message.step);
+            console.log('Login detected - automation resuming');
           } else if (message.type === 'automation_error') {
             setAutomationRunning(false);
             setAutomationError(message.error);

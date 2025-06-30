@@ -105,6 +105,92 @@ async function openDevtools(page: any, client: any) {
   return inspectUrl; // Return URL for frontend iframe
 }
 
+// Login detection system for manual intervention
+async function checkLoginComplete(): Promise<boolean> {
+  if (!testPage) return false;
+  
+  try {
+    const currentUrl = await testPage.url();
+    
+    // Check URL patterns first
+    if (currentUrl.includes('/home') || 
+        currentUrl.includes('/dashboard') || 
+        (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/i/flow'))) {
+      return true;
+    }
+    
+    // Check for authenticated UI elements
+    const authElements = await testPage.evaluate(() => {
+      const homeBtn = document.querySelector('[data-testid="AppTabBar_Home_Link"]');
+      const profileBtn = document.querySelector('[data-testid="AppTabBar_Profile_Link"]');
+      const composeBtn = document.querySelector('[data-testid="SideNav_NewTweet_Button"]');
+      const userAvatar = document.querySelector('[data-testid="DashButton_ProfileIcon_Link"]');
+      const sideNav = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+      const tweetComposer = document.querySelector('[data-testid="tweetTextarea_0"]');
+      
+      return !!(homeBtn || profileBtn || composeBtn || userAvatar || sideNav || tweetComposer);
+    });
+    
+    return authElements;
+  } catch (error) {
+    console.log("Login check error:", error);
+    return false;
+  }
+}
+
+// Wait for manual login completion with proper polling
+async function waitForLoginCompletion(): Promise<boolean> {
+  const maxWait = 300000; // 5 minutes
+  const checkInterval = 2000; // 2 seconds
+  let elapsed = 0;
+  
+  while (elapsed < maxWait) {
+    const loginComplete = await checkLoginComplete();
+    
+    if (loginComplete) {
+      console.log("Manual login detected successfully!");
+      
+      // Notify all connected clients
+      streamingSockets.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'login_detected',
+            message: 'Login successful! Resuming automation...',
+            step: 3,
+            totalSteps: 8,
+            currentAction: 'Continuing with post interaction'
+          }));
+        }
+      });
+      
+      return true;
+    }
+    
+    // Send periodic status updates
+    if (elapsed % 30000 === 0 && elapsed > 0) { // Every 30 seconds
+      const remainingMinutes = Math.floor((maxWait - elapsed) / 60000);
+      const remainingSeconds = Math.floor(((maxWait - elapsed) % 60000) / 1000);
+      
+      streamingSockets.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'automation_progress',
+            currentAction: `Waiting for manual login completion (${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')} remaining)`,
+            step: 2,
+            totalSteps: 8,
+            message: 'Complete login in DevTools window to continue'
+          }));
+        }
+      });
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, checkInterval));
+    elapsed += checkInterval;
+  }
+  
+  return false; // Timeout reached
+}
+
 // Start live streaming with Bright Data's official method
 async function startScreenStreaming() {
   if (!testPage || !testClient || isStreaming) return;
@@ -1089,96 +1175,40 @@ router.post("/test-automation", async (req, res) => {
         throw new Error('Could not find password input field after multiple strategies');
       }
       
-      // Focus password field and notify user for manual password entry
+      // Focus password field and generate DevTools URL for manual login
       await testPage.focus(passwordField);
       await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log('Password field focused - requesting manual password entry');
+      console.log('Password field focused - generating DevTools URL for manual intervention');
       
-      // Send manual intervention request
+      // Generate DevTools URL using Page.inspect
+      const client = await testPage.target().createCDPSession();
+      const {frameTree: {frame}} = await client.send('Page.getFrameTree', {});
+      const {url: inspectUrl} = await client.send('Page.inspect', {frameId: frame.id});
+      
+      console.log('DevTools URL generated:', inspectUrl);
+      
+      // Send manual intervention request with DevTools URL
       streamingSockets.forEach(ws => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
-            type: 'manual_password_required',
-            message: 'Automation paused at password step - please enter password manually',
-            instructions: 'The password field is focused and ready. Please type your password in the live browser view and click Login. The automation will detect when login is complete and continue automatically.',
-            step: 'password_entry',
-            estimatedTime: '30 seconds'
+            type: 'manual_intervention',
+            inspectUrl: inspectUrl,
+            message: 'Please log in manually in Chrome DevTools',
+            instructions: 'Click the button below to open Chrome DevTools in a new window. Complete the login process there, then the automation will continue automatically.',
+            timeoutMinutes: 5,
+            step: 2,
+            totalSteps: 8,
+            currentAction: 'Waiting for manual login completion'
           }));
         }
       });
       
-      // Wait for user to manually enter password and complete login
-      console.log('Waiting for manual password entry and login completion...');
-      let loginDetected = false;
-      let loginAttempts = 0;
-      const maxLoginAttempts = 60; // 3 minutes (3 second intervals)
+      // Wait for manual login completion with proper polling
+      console.log('Waiting for manual login completion in DevTools window...');
+      const loginSuccess = await waitForLoginCompletion();
       
-      while (!loginDetected && loginAttempts < maxLoginAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        loginAttempts++;
-        
-        try {
-          const currentUrl = await testPage.url();
-          const loginSuccess = await testPage.evaluate(() => {
-            // Check for multiple indicators of successful login
-            const homeButton = document.querySelector('[data-testid="AppTabBar_Home_Link"]');
-            const profileButton = document.querySelector('[data-testid="AppTabBar_Profile_Link"]');
-            const composeButton = document.querySelector('[data-testid="SideNav_NewTweet_Button"]');
-            const tweetComposer = document.querySelector('[data-testid="tweetTextarea_0"]');
-            const posts = document.querySelectorAll('[data-testid="tweet"]');
-            const userAvatar = document.querySelector('[data-testid="DashButton_ProfileIcon_Link"]');
-            const sideNav = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
-            
-            // Check URL patterns
-            const urlIndicators = window.location.href.includes('/home') || 
-                                 window.location.href.includes('x.com') && !window.location.href.includes('/login') &&
-                                 !window.location.href.includes('/i/flow');
-            
-            // Check for tweet timeline content
-            const hasContent = posts.length > 0 || !!tweetComposer;
-            
-            return !!(homeButton || profileButton || composeButton || userAvatar || sideNav || (urlIndicators && hasContent));
-          });
-          
-          if (loginSuccess || currentUrl.includes('/home') || (currentUrl.includes('x.com') && !currentUrl.includes('/login'))) {
-            loginDetected = true;
-            console.log("Manual login detected successfully!");
-            
-            streamingSockets.forEach(ws => {
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                  type: 'automation_status',
-                  status: 'login_completed',
-                  message: 'Manual login successful! Continuing automation...',
-                  step: 4,
-                  totalSteps: 8,
-                  estimatedTime: '2-3 minutes remaining'
-                }));
-              }
-            });
-          } else {
-            // Send periodic status updates
-            if (loginAttempts % 10 === 0) {
-              streamingSockets.forEach(ws => {
-                if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(JSON.stringify({
-                    type: 'automation_status',
-                    status: 'waiting_manual_login',
-                    message: `Waiting for manual password entry... (${Math.floor(loginAttempts * 3 / 60)}:${(loginAttempts * 3 % 60).toString().padStart(2, '0')})`,
-                    step: 4,
-                    totalSteps: 8
-                  }));
-                }
-              });
-            }
-          }
-        } catch (error) {
-          console.log("Login check error:", error);
-        }
-      }
-      
-      if (!loginDetected) {
-        throw new Error("Manual login timeout - please try again");
+      if (!loginSuccess) {
+        throw new Error("Manual login timeout - please complete login within 5 minutes");
       }
       
       console.log('Manual password entry and login completed successfully');
