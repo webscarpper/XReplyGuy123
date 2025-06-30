@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, CheckCircle } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertCircle, CheckCircle, Keyboard } from 'lucide-react';
 
 export default function BrowserLogin() {
   const [, setLocation] = useLocation();
@@ -15,6 +17,33 @@ export default function BrowserLogin() {
   const [clicking, setClicking] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
   const [typeText, setTypeText] = useState('');
+
+  const handleType = async () => {
+    if (!typeText.trim()) return;
+    
+    try {
+      const response = await fetch('/api/test-browser/control', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          type: 'type',
+          text: typeText
+        })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        setShowTypeModal(false);
+        setTypeText('');
+      } else {
+        console.error('Type failed:', result.message);
+      }
+    } catch (err: any) {
+      console.error('Type error:', err);
+    }
+  };
 
   const fetchScreenshot = async () => {
     try {
@@ -209,8 +238,18 @@ export default function BrowserLogin() {
                       <div className="absolute bottom-2 left-2 bg-black bg-opacity-75 text-white px-2 py-1 rounded text-xs">
                         {browserInfo.url ? new URL(browserInfo.url).hostname : 'Loading...'}
                       </div>
-                      <div className="absolute top-2 left-2 bg-blue-600 bg-opacity-75 text-white px-2 py-1 rounded text-xs">
-                        Click to interact
+                      <div className="absolute top-2 left-2 bg-blue-600 bg-opacity-75 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
+                        <span>Click to interact</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowTypeModal(true);
+                          }}
+                          className="ml-2 p-1 hover:bg-white hover:bg-opacity-20 rounded"
+                          title="Type text"
+                        >
+                          <Keyboard className="w-3 h-3" />
+                        </button>
                       </div>
                       {clicking && (
                         <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-20">
@@ -263,6 +302,40 @@ export default function BrowserLogin() {
           )}
         </div>
       </div>
+
+      {/* Type Text Dialog */}
+      <Dialog open={showTypeModal} onOpenChange={setShowTypeModal}>
+        <DialogContent className="bg-slate-800 border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-white">Type Text</DialogTitle>
+            <DialogDescription className="text-slate-300">
+              Enter text to type into the browser (like username or password)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              value={typeText}
+              onChange={(e) => setTypeText(e.target.value)}
+              placeholder="Enter text to type..."
+              className="bg-slate-700 border-slate-600 text-white"
+              onKeyPress={(e) => e.key === 'Enter' && handleType()}
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <Button onClick={handleType} className="bg-blue-600 hover:bg-blue-700">
+                Type Text
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowTypeModal(false)}
+                className="border-slate-600 text-slate-300 hover:bg-slate-700"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
