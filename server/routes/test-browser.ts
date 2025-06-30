@@ -829,15 +829,26 @@ router.post("/test-automation", async (req, res) => {
       timeout: 60000 
     });
 
-    // STEP 2: Automated Login
-    console.log("STEP 2: Performing automated login...");
+    // STEP 2: Start live streaming and automated login
+    console.log("STEP 2: Starting live stream and performing automated login...");
+    
+    // Start live streaming so user can see the automation
+    await startScreenStreaming();
+    console.log("Live streaming started - user can now see automation");
+    
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'automation_progress',
-          currentAction: 'Performing automated login',
+          currentAction: 'Starting live view and automated login',
           progress: 25,
-          nextStep: 'Filling in credentials'
+          nextStep: 'Watch the live browser as automation fills credentials'
+        }));
+        
+        // Tell frontend to start showing live stream
+        ws.send(JSON.stringify({
+          type: 'start_live_stream',
+          message: 'Live streaming enabled - you can now watch the automation in real-time'
         }));
       }
     });
@@ -950,7 +961,12 @@ router.post("/test-automation", async (req, res) => {
         'input[name="password"]',
         'input[type="password"]',
         'input[data-testid="ocfEnterTextTextInput"]',
-        'input[placeholder*="password" i]'
+        'input[placeholder*="password" i]',
+        'input[autocomplete="current-password"]',
+        'input[autocomplete="password"]',
+        'div[data-testid="ocfEnterTextTextInput"] input',
+        'input[aria-label*="password" i]',
+        'input[data-testid*="password" i]'
       ];
       
       let passwordField = null;

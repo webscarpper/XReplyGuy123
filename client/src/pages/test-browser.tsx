@@ -154,6 +154,10 @@ export default function TestBrowser() {
               setAutomationComplete(false);
               resetAutomationState();
             }, 10000);
+          } else if (message.type === 'start_live_stream') {
+            // Automatically start live streaming when automation begins
+            setIsStreaming(true);
+            console.log('Live streaming activated for automation');
           } else if (message.type === 'automation_error') {
             setAutomationRunning(false);
             setAutomationError(message.error);
