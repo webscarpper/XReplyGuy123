@@ -859,10 +859,25 @@ router.post("/test-script", async (req, res) => {
     
     // First clear any existing session
     await page.context().clearCookies();
-    await page.evaluate(() => {
-      localStorage.clear();
-      sessionStorage.clear();
-    });
+
+    // Try to clear storage (handle security restrictions gracefully)
+    try {
+      await page.evaluate(() => {
+        try {
+          localStorage.clear();
+        } catch (e) {
+          console.log('localStorage clear blocked by security policy');
+        }
+        try {
+          sessionStorage.clear();
+        } catch (e) {
+          console.log('sessionStorage clear blocked by security policy');
+        }
+      });
+      console.log("✅ Storage cleared successfully");
+    } catch (error) {
+      console.log("⚠️ Storage clearing blocked by security policy, continuing anyway...");
+    }
     
     // Navigate to login page
     await page.goto('https://x.com/i/flow/login', {
