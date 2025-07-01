@@ -200,6 +200,7 @@ export default function TestBrowser() {
       console.log("Connecting to Browserbase with stealth...");
       const response = await apiRequest('/test-connection', { method: 'POST' });
       
+      console.log("Connection response:", response);
       setStatus(response);
       sessionStartTime.current = Date.now();
       
@@ -390,26 +391,31 @@ export default function TestBrowser() {
                   </>
                 )}
 
-                <div className="pt-2">
-                  {!status.isConnected ? (
-                    <Button
-                      onClick={connectAndStartLiveView}
-                      disabled={loading}
-                      className="w-full bg-purple-600 hover:bg-purple-700"
-                    >
-                      {loading ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                          Connecting...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-4 h-4 mr-2" />
-                          Connect & Start Live View
-                        </>
-                      )}
-                    </Button>
-                  ) : (
+                <div className="pt-2 space-y-3">
+                  <Button
+                    onClick={connectAndStartLiveView}
+                    disabled={loading || status.isConnected}
+                    className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    {loading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Connecting...
+                      </>
+                    ) : status.isConnected ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Session Active
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 mr-2" />
+                        Connect & Start Live View
+                      </>
+                    )}
+                  </Button>
+
+                  {(status.isConnected || liveViewUrl) && (
                     <Button
                       onClick={terminateSession}
                       disabled={loading}
