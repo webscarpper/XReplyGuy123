@@ -1446,6 +1446,26 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
                 await cursor.click(altButton);
                 await page.waitForTimeout(2000);
                 
+                // Human-like browsing simulation AFTER successful reply
+                console.log("✅ Reply completed! Now browsing YouTube like a human...");
+
+                broadcastToClients({
+                  type: 'automation_progress',
+                  message: 'Reply sent! Opening YouTube for realistic browsing behavior...',
+                  step: 'post_reply_youtube',
+                  liveViewUrl: liveViewUrl
+                });
+
+                // Call YouTube browsing function AFTER reply completion
+                await openYouTubeAndScroll(page, sessionId);
+
+                broadcastToClients({
+                  type: 'automation_progress',
+                  message: 'Returned from YouTube browsing. Automation cycle complete!',
+                  step: 'youtube_complete',
+                  liveViewUrl: liveViewUrl
+                });
+                
                 broadcastToClients({
                   type: 'automation_complete',
                   message: 'Reply submitted successfully with alternative button!',
@@ -1473,6 +1493,26 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
           const modalStillOpen = await page.locator('[data-testid="tweetTextarea_0"]').isVisible();
           if (!modalStillOpen) {
             console.log("✅ Reply submitted successfully - modal closed");
+            
+            // Human-like browsing simulation AFTER successful reply
+            console.log("✅ Reply completed! Now browsing YouTube like a human...");
+
+            broadcastToClients({
+              type: 'automation_progress',
+              message: 'Reply sent! Opening YouTube for realistic browsing behavior...',
+              step: 'post_reply_youtube',
+              liveViewUrl: liveViewUrl
+            });
+
+            // Call YouTube browsing function AFTER reply completion
+            await openYouTubeAndScroll(page, sessionId);
+
+            broadcastToClients({
+              type: 'automation_progress',
+              message: 'Returned from YouTube browsing. Automation cycle complete!',
+              step: 'youtube_complete',
+              liveViewUrl: liveViewUrl
+            });
           } else {
             console.log("⚠️ Modal still open - checking for error messages");
             
@@ -1497,15 +1537,16 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 
     broadcastToClients({
       type: 'automation_complete',
-      message: 'Human-like automation completed successfully!',
+      message: 'Human-like automation cycle completed! Session remains active.',
       sessionId: sessionId,
       liveViewUrl: liveViewUrl,
       summary: {
         login: '✅ Login completed',
-        navigation: '✅ Navigated to feed',
+        navigation: '✅ Navigated to Following feed',
         interaction: '✅ Opened and read first post',
-        engagement: '✅ Liked post and replied with GM!',
-        completion: '✅ All actions completed naturally'
+        engagement: '✅ Liked post and replied',
+        browsing: '✅ YouTube browsing simulation',
+        completion: '✅ Cycle complete - session active'
       }
     });
 
@@ -1610,6 +1651,61 @@ async function checkIfLoginNeeded(page: Page) {
   } catch (error) {
     console.log("⚠️ Login check failed, assuming login needed:", error);
     return true; // Assume login needed if check fails
+  }
+}
+
+// Human-like YouTube browsing simulation
+async function openYouTubeAndScroll(page: Page, sessionId: string) {
+  try {
+    console.log("🎥 Opening YouTube in new tab for human-like browsing...");
+    
+    // Get the browser context from the current page
+    const context = page.context();
+    
+    // Create new page (tab) in same context
+    const youtubeTab = await context.newPage();
+    console.log("✅ New YouTube tab created");
+    
+    // Navigate to YouTube with proper wait
+    await youtubeTab.goto('https://www.youtube.com', {
+      waitUntil: 'networkidle',
+      timeout: 30000
+    });
+    console.log("✅ YouTube loaded");
+    
+    // Wait for page to fully load
+    await youtubeTab.waitForTimeout(2000 + Math.random() * 3000);
+    
+    // Human-like scrolling pattern (1600px total in chunks)
+    const scrollSteps = 4; // 400px per step
+    const scrollAmount = 400;
+    
+    for (let i = 0; i < scrollSteps; i++) {
+      console.log(`📜 Scrolling step ${i + 1}/${scrollSteps}`);
+      
+      // Use mouse.wheel() for natural scrolling
+      await youtubeTab.mouse.wheel(0, scrollAmount);
+      
+      // Human-like pause between scrolls (1-3 seconds)
+      const pauseTime = 1000 + Math.random() * 2000;
+      await youtubeTab.waitForTimeout(pauseTime);
+    }
+    
+    // Browse YouTube for 5-10 seconds (realistic human behavior)
+    const browsingTime = 5000 + Math.random() * 5000;
+    console.log(`👀 Browsing YouTube for ${Math.round(browsingTime/1000)}s...`);
+    await youtubeTab.waitForTimeout(browsingTime);
+    
+    // Close the YouTube tab
+    await youtubeTab.close();
+    console.log("✅ YouTube tab closed, returning to X");
+    
+    // Small delay before continuing
+    await page.waitForTimeout(1000 + Math.random() * 2000);
+    
+  } catch (error: any) {
+    console.error("❌ YouTube tab error:", error.message);
+    // Don't throw - continue automation even if YouTube fails
   }
 }
 
