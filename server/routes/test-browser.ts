@@ -1022,6 +1022,15 @@ async function performTestAutomation(page: Page, sessionId: string, liveViewUrl:
   try {
     console.log("🤖 Starting test automation sequence...");
 
+    // Initial delay to let user observe the automation starting
+    broadcastToClients({
+      type: 'automation_progress',
+      message: 'Automation will start in 10 seconds... (giving time to observe)',
+      step: 'initialization',
+      liveViewUrl: liveViewUrl
+    });
+    await page.waitForTimeout(10000); // 10 second delay for user to see
+
     // Update status with persistent live view
     broadcastToClients({
       type: 'automation_progress',
@@ -1030,19 +1039,24 @@ async function performTestAutomation(page: Page, sessionId: string, liveViewUrl:
       liveViewUrl: liveViewUrl
     });
 
-    // 1. Navigate to home feed
-    await page.goto('https://x.com/home', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(5000); // Longer wait for page to fully load
+    // 1. Navigate to home feed with proper loading
+    await page.goto('https://x.com/home', { waitUntil: 'networkidle', timeout: 60000 });
+    console.log("📍 Navigated to home feed, waiting for full page load...");
+    
+    // Wait for page to be properly loaded - check for key elements
+    await waitForPageToLoad(page, liveViewUrl);
 
-    // 2. Wait for tweets to load and find posts with multiple selectors
+    // 2. Human-like delay before looking for posts
     broadcastToClients({
       type: 'automation_progress',
-      message: 'Waiting for posts to load...',
+      message: 'Page loaded! Looking for posts... (waiting 15 seconds to observe)',
       step: 'loading',
       liveViewUrl: liveViewUrl
     });
+    await page.waitForTimeout(15000); // 15 second delay
 
-    const posts = await findPostsWithMultipleSelectors(page);
+    // 3. Find posts with better loading detection
+    const posts = await findPostsWithBetterDetection(page, liveViewUrl);
     
     if (posts.length === 0) {
       throw new Error('No posts found on the page. The page may not have loaded correctly or Twitter structure changed.');
@@ -1050,41 +1064,75 @@ async function performTestAutomation(page: Page, sessionId: string, liveViewUrl:
 
     console.log(`✅ Found ${posts.length} posts, proceeding with automation`);
 
+    // 4. Human-like delay before interaction
     broadcastToClients({
       type: 'automation_progress',
-      message: `Found ${posts.length} posts. Clicking on 4th post...`,
-      step: 'post_interaction',
+      message: `Found ${posts.length} posts. Will interact with a post in 10 seconds...`,
+      step: 'preparing',
       liveViewUrl: liveViewUrl
     });
+    await page.waitForTimeout(10000); // 10 second delay
 
-    // 3. Click on the 4th post (or last available if less than 4)
+    // 5. Select and interact with a post
     const targetPostIndex = Math.min(3, posts.length - 1);
     const targetPost = posts[targetPostIndex];
 
     if (targetPost) {
-      console.log(`Clicking on post ${targetPostIndex + 1}...`);
-      
-      // Scroll the post into view first
+      broadcastToClients({
+        type: 'automation_progress',
+        message: `Scrolling to post ${targetPostIndex + 1}...`,
+        step: 'scrolling',
+        liveViewUrl: liveViewUrl
+      });
+
+      // Scroll to post slowly like a human
       await targetPost.scrollIntoViewIfNeeded();
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(3000); // Wait for scroll animation
       
-      // Click the post with retry logic
-      await clickWithRetry(page, targetPost);
-      await page.waitForTimeout(4000);
+      broadcastToClients({
+        type: 'automation_progress',
+        message: `Clicking on post ${targetPostIndex + 1}...`,
+        step: 'clicking',
+        liveViewUrl: liveViewUrl
+      });
 
-      // 4. Try to interact with the post (like, reply, etc.)
-      await interactWithPost(page, liveViewUrl);
+      // Click with human-like behavior
+      await clickWithHumanBehavior(page, targetPost);
+      await page.waitForTimeout(8000); // Wait for post to open
 
-      // 5. Go back to feed
+      // 6. Interact with the opened post
+      await interactWithPostSlowly(page, liveViewUrl);
+
+      // 7. Human-like delay before going back
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Going back to feed...',
+        step: 'returning',
+        liveViewUrl: liveViewUrl
+      });
+      await page.waitForTimeout(5000);
+      
       await page.goBack();
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(5000); // Wait for navigation
 
-      // 6. Do some final scrolling
-      await page.evaluate(() => window.scrollBy(0, 500));
-      await page.waitForTimeout(1000);
+      // 8. Final human-like scrolling
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Scrolling through feed...',
+        step: 'final_scroll',
+        liveViewUrl: liveViewUrl
+      });
+      
+      await page.evaluate(() => window.scrollBy(0, 400));
+      await page.waitForTimeout(2000);
+      await page.evaluate(() => window.scrollBy(0, 400));
+      await page.waitForTimeout(2000);
     }
 
-    // 7. Automation complete
+    // 9. Final delay before completion
+    await page.waitForTimeout(5000);
+
+    // 10. Automation complete
     console.log("🎉 Test automation completed successfully!");
 
     broadcastToClients({
@@ -1112,92 +1160,185 @@ async function performTestAutomation(page: Page, sessionId: string, liveViewUrl:
   }
 }
 
-// Helper function to find posts with multiple possible selectors
-async function findPostsWithMultipleSelectors(page: Page) {
+// Wait for page to be properly loaded
+async function waitForPageToLoad(page: Page, liveViewUrl: string) {
+  try {
+    console.log("⏳ Waiting for Twitter page to fully load...");
+    
+    // Wait for multiple key elements to be present
+    const loadingSteps = [
+      { selector: '[data-testid="primaryColumn"]', name: 'main column' },
+      { selector: '[role="main"]', name: 'main content area' },
+      { selector: '[data-testid="tweet"], article[role="article"]', name: 'tweets' }
+    ];
+
+    for (const step of loadingSteps) {
+      broadcastToClients({
+        type: 'automation_progress',
+        message: `Waiting for ${step.name} to load...`,
+        step: 'loading_check',
+        liveViewUrl: liveViewUrl
+      });
+
+      try {
+        await page.waitForSelector(step.selector, { timeout: 30000 });
+        console.log(`✅ ${step.name} loaded`);
+        await page.waitForTimeout(2000); // Small delay between checks
+      } catch (e) {
+        console.log(`⚠️ ${step.name} not found, continuing...`);
+      }
+    }
+
+    // Wait for network to settle
+    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    
+    // Additional wait for dynamic content
+    await page.waitForTimeout(8000);
+    
+    console.log("✅ Page appears to be fully loaded");
+  } catch (error) {
+    console.log("⚠️ Page loading check completed with warnings:", error);
+  }
+}
+
+// Better post detection with multiple attempts
+async function findPostsWithBetterDetection(page: Page, liveViewUrl: string) {
   const selectors = [
     '[data-testid="tweet"]',
-    '[data-testid="tweetText"]',
     'article[data-testid="tweet"]',
     'div[data-testid="tweet"]',
     'article[role="article"]',
-    'div[aria-label*="tweet" i]'
+    '[data-testid="tweetText"]'
   ];
 
-  // Try each selector and return the first one that finds posts
-  for (const selector of selectors) {
-    try {
-      await page.waitForSelector(selector, { timeout: 5000 });
-      const posts = await page.$$(selector);
-      if (posts.length > 0) {
-        console.log(`✅ Found ${posts.length} posts using selector: ${selector}`);
-        return posts;
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    
+    broadcastToClients({
+      type: 'automation_progress',
+      message: `Looking for posts... (attempt ${attempts}/${maxAttempts})`,
+      step: 'post_detection',
+      liveViewUrl: liveViewUrl
+    });
+
+    // Try each selector
+    for (const selector of selectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 10000 });
+        const posts = await page.$$(selector);
+        if (posts.length > 0) {
+          console.log(`✅ Found ${posts.length} posts using selector: ${selector}`);
+          return posts;
+        }
+      } catch (e) {
+        console.log(`No posts found with selector: ${selector}`);
+        continue;
       }
-    } catch (e) {
-      console.log(`No posts found with selector: ${selector}`);
-      continue;
     }
-  }
 
-  // If no posts found with any selector, try scrolling and checking again
-  console.log("No posts found with initial selectors, trying to scroll...");
-  await page.evaluate(() => window.scrollBy(0, 1000));
-  await page.waitForTimeout(3000);
-
-  for (const selector of selectors) {
-    try {
-      const posts = await page.$$(selector);
-      if (posts.length > 0) {
-        console.log(`✅ Found ${posts.length} posts after scrolling using selector: ${selector}`);
-        return posts;
-      }
-    } catch (e) {
-      continue;
+    if (attempts < maxAttempts) {
+      // Scroll to load more content
+      console.log("Scrolling to load more posts...");
+      await page.evaluate(() => window.scrollBy(0, 800));
+      await page.waitForTimeout(4000); // Wait for content to load
     }
   }
 
   return [];
 }
 
-// Helper function to click with retry logic
-async function clickWithRetry(page: Page, element: any, maxRetries = 3) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      await element.click({ timeout: 10000 });
-      console.log("✅ Successfully clicked element");
-      return;
-    } catch (error: any) {
-      console.log(`Click attempt ${i + 1} failed:`, error.message);
+// Human-like clicking behavior
+async function clickWithHumanBehavior(page: Page, element: any) {
+  try {
+    // Move mouse to element first (like a human would)
+    const box = await element.boundingBox();
+    if (box) {
+      // Move to a slightly random position within the element
+      const x = box.x + box.width * (0.3 + Math.random() * 0.4);
+      const y = box.y + box.height * (0.3 + Math.random() * 0.4);
       
-      if (i === maxRetries - 1) {
-        // Last attempt, try force click
-        try {
-          await element.click({ force: true, timeout: 5000 });
-          console.log("✅ Successfully force-clicked element");
-          return;
-        } catch (forceError) {
-          throw new Error(`Failed to click element after ${maxRetries} attempts: ${error.message}`);
-        }
-      }
-      
-      await page.waitForTimeout(2000);
+      await page.mouse.move(x, y);
+      await page.waitForTimeout(500 + Math.random() * 1000); // Random delay 0.5-1.5s
     }
+
+    // Wait for any loading overlays to disappear
+    await waitForLoadingToComplete(page);
+
+    // Click with retry logic
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await element.click({ timeout: 15000 });
+        console.log("✅ Successfully clicked element");
+        return;
+      } catch (error: any) {
+        console.log(`Click attempt ${attempt} failed:`, error.message);
+        
+        if (attempt === 3) {
+          // Last attempt - try force click
+          try {
+            await element.click({ force: true, timeout: 10000 });
+            console.log("✅ Successfully force-clicked element");
+            return;
+          } catch (forceError) {
+            throw new Error(`Failed to click element after 3 attempts: ${error.message}`);
+          }
+        }
+        
+        // Wait before retry
+        await page.waitForTimeout(2000);
+      }
+    }
+  } catch (error: any) {
+    throw new Error(`Click failed: ${error.message}`);
   }
 }
 
-// Helper function to interact with an opened post
-async function interactWithPost(page: Page, liveViewUrl: string) {
+// Wait for loading overlays to disappear
+async function waitForLoadingToComplete(page: Page) {
+  try {
+    // Wait for common loading indicators to disappear
+    const loadingSelectors = [
+      '[aria-label="Loading"]',
+      '.r-1awozwy.r-1777fci', // Loading spinner classes
+      '[role="progressbar"]'
+    ];
+
+    for (const selector of loadingSelectors) {
+      try {
+        await page.waitForSelector(selector, { state: 'hidden', timeout: 5000 });
+      } catch (e) {
+        // Loading indicator might not be present, continue
+      }
+    }
+  } catch (error) {
+    console.log("Loading check completed:", error.message);
+  }
+}
+
+// Slower, more human-like post interaction
+async function interactWithPostSlowly(page: Page, liveViewUrl: string) {
   try {
     broadcastToClients({
       type: 'automation_progress',
-      message: 'Interacting with post (like, reply)...',
-      step: 'interaction',
+      message: 'Observing post content... (like a human would)',
+      step: 'observing',
       liveViewUrl: liveViewUrl
     });
 
-    // Wait for post to load
-    await page.waitForTimeout(2000);
+    // Wait to "read" the post like a human
+    await page.waitForTimeout(5000 + Math.random() * 3000); // 5-8 seconds
 
     // Try to like the post
+    broadcastToClients({
+      type: 'automation_progress',
+      message: 'Looking for like button...',
+      step: 'finding_like',
+      liveViewUrl: liveViewUrl
+    });
+
     const likeSelectors = [
       '[data-testid="like"]',
       '[aria-label*="like" i]',
@@ -1208,9 +1349,18 @@ async function interactWithPost(page: Page, liveViewUrl: string) {
       try {
         const likeButton = await page.$(selector);
         if (likeButton) {
+          await page.waitForTimeout(1000 + Math.random() * 2000); // Random delay
           await likeButton.click();
           console.log("✅ Liked the post");
-          await page.waitForTimeout(1000);
+          
+          broadcastToClients({
+            type: 'automation_progress',
+            message: 'Post liked! Looking for reply option...',
+            step: 'liked',
+            liveViewUrl: liveViewUrl
+          });
+          
+          await page.waitForTimeout(2000);
           break;
         }
       } catch (e) {
@@ -1229,50 +1379,21 @@ async function interactWithPost(page: Page, liveViewUrl: string) {
       try {
         const replyButton = await page.$(selector);
         if (replyButton) {
+          await page.waitForTimeout(2000 + Math.random() * 2000); // Human-like delay
           await replyButton.click();
           console.log("✅ Opened reply section");
-          await page.waitForTimeout(2000);
+          
+          broadcastToClients({
+            type: 'automation_progress',
+            message: 'Reply dialog opened! Typing comment...',
+            step: 'replying',
+            liveViewUrl: liveViewUrl
+          });
+          
+          await page.waitForTimeout(3000); // Wait for reply dialog
 
           // Try to type a comment
-          const commentSelectors = [
-            '[data-testid="tweetTextarea_0"]',
-            'div[aria-label*="tweet" i][contenteditable="true"]',
-            'div[contenteditable="true"][aria-multiline="true"]'
-          ];
-
-          for (const commentSelector of commentSelectors) {
-            try {
-              const commentBox = await page.$(commentSelector);
-              if (commentBox) {
-                await commentBox.type("Interesting post!", { delay: 100 });
-                console.log("✅ Typed comment");
-                await page.waitForTimeout(1000);
-
-                // Try to submit
-                const submitSelectors = [
-                  '[data-testid="tweetButtonInline"]',
-                  'button[data-testid="tweetButton"]',
-                  'button[aria-label*="post" i]'
-                ];
-
-                for (const submitSelector of submitSelectors) {
-                  try {
-                    const submitButton = await page.$(submitSelector);
-                    if (submitButton) {
-                      await submitButton.click();
-                      console.log("✅ Posted comment");
-                      return;
-                    }
-                  } catch (e) {
-                    continue;
-                  }
-                }
-                break;
-              }
-            } catch (e) {
-              continue;
-            }
-          }
+          await typeCommentSlowly(page, liveViewUrl);
           break;
         }
       } catch (e) {
@@ -1284,5 +1405,86 @@ async function interactWithPost(page: Page, liveViewUrl: string) {
     console.log("Post interaction error:", error.message);
   }
 }
+
+// Human-like typing behavior
+async function typeCommentSlowly(page: Page, liveViewUrl: string) {
+  const commentSelectors = [
+    '[data-testid="tweetTextarea_0"]',
+    'div[aria-label*="tweet" i][contenteditable="true"]',
+    'div[contenteditable="true"][aria-multiline="true"]'
+  ];
+
+  const comments = [
+    "Interesting perspective! 🤔",
+    "Thanks for sharing this! 👍",
+    "Great point! 💯",
+    "Love this! ❤️"
+  ];
+
+  const randomComment = comments[Math.floor(Math.random() * comments.length)];
+
+  for (const commentSelector of commentSelectors) {
+    try {
+      const commentBox = await page.$(commentSelector);
+      if (commentBox) {
+        // Click in the comment box
+        await commentBox.click();
+        await page.waitForTimeout(1000);
+
+        // Type slowly like a human
+        for (const char of randomComment) {
+          await page.keyboard.type(char);
+          await page.waitForTimeout(50 + Math.random() * 150); // Random typing speed
+        }
+
+        console.log("✅ Typed comment:", randomComment);
+        
+        broadcastToClients({
+          type: 'automation_progress',
+          message: `Comment typed: "${randomComment}" - Looking for post button...`,
+          step: 'posting',
+          liveViewUrl: liveViewUrl
+        });
+
+        await page.waitForTimeout(2000);
+
+        // Try to submit the comment
+        const submitSelectors = [
+          '[data-testid="tweetButtonInline"]',
+          'button[data-testid="tweetButton"]',
+          'button[aria-label*="post" i]',
+          'button[aria-label*="reply" i]'
+        ];
+
+        for (const submitSelector of submitSelectors) {
+          try {
+            const submitButton = await page.$(submitSelector);
+            if (submitButton) {
+              await page.waitForTimeout(1000 + Math.random() * 2000);
+              await submitButton.click();
+              console.log("✅ Posted comment");
+              
+              broadcastToClients({
+                type: 'automation_progress',
+                message: 'Comment posted successfully!',
+                step: 'posted',
+                liveViewUrl: liveViewUrl
+              });
+              
+              return;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        break;
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+}
+
+
 
 export default router;
