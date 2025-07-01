@@ -1109,11 +1109,13 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       liveViewUrl: liveViewUrl
     });
 
+    // Safe cursor click with error handling
     try {
-        await cursor.click(firstPost);
+      await cursor.click(firstPost);
+      console.log("✅ Post clicked successfully");
     } catch (error) {
-        console.warn("Failed to click using ghost cursor, falling back to regular click", error);
-        await firstPost.click();
+      console.log("⚠️ Cursor click failed, using direct click:", error.message);
+      await firstPost.click();
     }
     await page.waitForTimeout(3000 + Math.random() * 2000);
 
@@ -1157,12 +1159,14 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     const likeButton = await page.$('[data-testid="like"]');
     if (likeButton) {
       console.log("❤️ Liking post...");
-      try {
-          await cursor.click(likeButton);
-      } catch (error) {
-          console.warn("Failed to click using ghost cursor, falling back to regular click", error);
-          await likeButton.click();
-      }
+      // Safe cursor click with error handling
+    try {
+      await cursor.click(likeButton);
+      console.log("✅ Post clicked successfully");
+    } catch (error) {
+      console.log("⚠️ Cursor click failed, using direct click:", error.message);
+      await likeButton.click();
+    }
       await page.waitForTimeout(1500 + Math.random() * 1000);
 
       broadcastToClients({
@@ -1177,12 +1181,14 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     const replyButton = await page.$('[data-testid="reply"]');
     if (replyButton) {
       console.log("💬 Opening reply...");
-      try {
-          await cursor.click(replyButton);
-      } catch (error) {
-          console.warn("Failed to click using ghost cursor, falling back to regular click", error);
-          await replyButton.click();
-      }
+      // Safe cursor click with error handling
+    try {
+      await cursor.click(replyButton);
+      console.log("✅ Post clicked successfully");
+    } catch (error) {
+      console.log("⚠️ Cursor click failed, using direct click:", error.message);
+      await replyButton.click();
+    }
       await page.waitForTimeout(2000 + Math.random() * 1000);
 
       // Step 10: Type comment (VERIFIED: page.keyboard.type with delay)
@@ -1195,12 +1201,14 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 
       const commentBox = await page.$('[data-testid="tweetTextarea_0"]');
       if (commentBox) {
-        try {
-            await cursor.click(commentBox);
-        } catch (error) {
-            console.warn("Failed to click using ghost cursor, falling back to regular click", error);
-            await commentBox.click();
-        }
+        // Safe cursor click with error handling
+    try {
+      await cursor.click(commentBox);
+      console.log("✅ Post clicked successfully");
+    } catch (error) {
+      console.log("⚠️ Cursor click failed, using direct click:", error.message);
+      await commentBox.click();
+    }
         await page.waitForTimeout(500 + Math.random() * 500);
 
         // VERIFIED: page.keyboard.type with delay parameter
@@ -1211,12 +1219,14 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
         const submitButton = await page.$('[data-testid="tweetButtonInline"]');
         if (submitButton) {
           console.log("📤 Submitting reply...");
-           try {
-                await cursor.click(submitButton);
-            } catch (error) {
-                console.warn("Failed to click using ghost cursor, falling back to regular click", error);
-                await submitButton.click();
-            }
+           // Safe cursor click with error handling
+    try {
+      await cursor.click(submitButton);
+      console.log("✅ Post clicked successfully");
+    } catch (error) {
+      console.log("⚠️ Cursor click failed, using direct click:", error.message);
+      await submitButton.click();
+    }
           await page.waitForTimeout(2000);
         }
       }
