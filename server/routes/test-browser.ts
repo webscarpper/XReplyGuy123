@@ -854,12 +854,24 @@ router.post("/test-script", async (req, res) => {
       sessionId: session.id
     });
 
-    // 5. Navigate to Twitter login
-    console.log("🌐 Navigating to Twitter login...");
+    // 5. Navigate to Twitter login (always start fresh)
+    console.log("🌐 Navigating to fresh Twitter login page...");
+    
+    // First clear any existing session
+    await page.context().clearCookies();
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    });
+    
+    // Navigate to login page
     await page.goto('https://x.com/i/flow/login', {
       waitUntil: 'networkidle',
       timeout: 30000
     });
+    
+    // Wait a bit for page to fully render
+    await page.waitForTimeout(3000);
 
     // 6. Check if login is needed
     const needsLogin = await checkIfLoginNeeded(page);
@@ -914,13 +926,62 @@ router.post("/test-script", async (req, res) => {
 // Check if login is needed
 async function checkIfLoginNeeded(page: Page) {
   try {
-    // Check for login form elements
+    console.log("🔍 Checking if login is needed...");
+    
+    // Method 1: Check for login modal/dialog
+    const loginModal = await page.$('[aria-labelledby*="modal-header"]');
+    const signInModal = await page.$('div:has-text("Sign in to X")');
+    const loginDialog = await page.$('[role="dialog"]');
+    
+    // Method 2: Check for login form elements
     const loginButton = await page.$('[data-testid="LoginForm_Login_Button"]');
     const emailInput = await page.$('[name="text"]');
     const passwordInput = await page.$('[name="password"]');
-
-    return !!(loginButton || emailInput || passwordInput);
+    const usernameInput = await page.$('input[autocomplete="username"]');
+    
+    // Method 3: Check for login-specific text content
+    const signInText = await page.$('text="Sign in to X"');
+    const loginText = await page.$('text="Log in"');
+    const nextButtonText = await page.$('text="Next"');
+    
+    // Method 4: Check current URL patterns
+    const currentUrl = await page.url();
+    const isLoginUrl = currentUrl.includes('/login') || 
+                      currentUrl.includes('/flow/login') || 
+                      currentUrl.includes('/i/flow/login');
+    
+    // Method 5: Check for absence of authenticated elements
+    const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
+    const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
+    const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
+    const authenticatedElements = homeButton || profileButton || composeButton;
+    
+    const loginNeeded = !!(
+      loginModal || 
+      signInModal || 
+      loginDialog ||
+      loginButton || 
+      emailInput || 
+      passwordInput || 
+      usernameInput ||
+      signInText ||
+      loginText ||
+      nextButtonText ||
+      isLoginUrl ||
+      !authenticatedElements
+    );
+    
+    console.log(`🔍 Login detection results:
+      - Login modal/dialog found: ${!!(loginModal || signInModal || loginDialog)}
+      - Login form elements found: ${!!(loginButton || emailInput || passwordInput || usernameInput)}
+      - Login text found: ${!!(signInText || loginText || nextButtonText)}
+      - Is login URL: ${isLoginUrl}
+      - Authenticated elements missing: ${!authenticatedElements}
+      - Final result: Login ${loginNeeded ? 'NEEDED' : 'NOT NEEDED'}`);
+    
+    return loginNeeded;
   } catch (error) {
+    console.log("⚠️ Login check failed, assuming login needed:", error);
     return true; // Assume login needed if check fails
   }
 }
@@ -968,35 +1029,65 @@ async function waitForLoginAndContinue(page: Page, sessionId: string, liveViewUr
 // Login detection function
 async function waitForLoginCompletion(page: Page, liveViewUrl: string) {
   const maxWait = 300000; // 5 minutes
-  const checkInterval = 2000; // 2 seconds
+  const checkInterval = 3000; // 3 seconds
   let elapsed = 0;
+
+  console.log("⏳ Starting login completion detection...");
 
   while (elapsed < maxWait) {
     try {
-      // Method 1: Check for authenticated UI elements
+      console.log(`🔍 Login check ${Math.floor(elapsed/1000)}s - Checking authentication status...`);
+      
+      // Method 1: Check for authenticated UI elements (most reliable)
       const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
       const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
       const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
+      const sideNavHome = await page.$('[data-testid="SideNav_AccountSwitcher_Button"]');
 
-      if (homeButton || profileButton || composeButton) {
+      if (homeButton || profileButton || composeButton || sideNavHome) {
+        console.log("✅ Authenticated UI elements found!");
         return true;
       }
 
-      // Method 2: Check URL patterns
+      // Method 2: Check URL patterns (secondary check)
       const currentUrl = await page.url();
-      if (currentUrl.includes('/home') || 
-          (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/flow'))) {
+      const isAuthenticatedUrl = (
+        currentUrl.includes('/home') || 
+        currentUrl.includes('/following') ||
+        currentUrl.includes('/notifications') ||
+        (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/flow') && !currentUrl.includes('/signup'))
+      );
+
+      if (isAuthenticatedUrl) {
+        console.log("✅ Authenticated URL pattern detected!");
         return true;
       }
 
-      // Method 3: Check for tweet composer
+      // Method 3: Check for tweet composer (strong indicator)
       const tweetComposer = await page.$('[data-testid="tweetTextarea_0"]');
-      if (tweetComposer) {
+      const primaryColumn = await page.$('[data-testid="primaryColumn"]');
+      
+      if (tweetComposer && primaryColumn) {
+        console.log("✅ Tweet composer and main feed found!");
         return true;
       }
+
+      // Method 4: Check for absence of login elements (negative check)
+      const loginModal = await page.$('[aria-labelledby*="modal-header"]');
+      const signInText = await page.$('text="Sign in to X"');
+      const loginButton = await page.$('[data-testid="LoginForm_Login_Button"]');
+      
+      const hasLoginElements = loginModal || signInText || loginButton;
+      
+      if (!hasLoginElements && primaryColumn) {
+        console.log("✅ No login elements found and main content present!");
+        return true;
+      }
+
+      console.log(`🔍 Login status: Auth elements=${!!(homeButton || profileButton || composeButton)}, URL=${isAuthenticatedUrl}, Composer=${!!tweetComposer}, No login=${!hasLoginElements}`);
 
     } catch (error) {
-      console.log("Login check error:", error);
+      console.log("⚠️ Login check error:", error);
     }
 
     // Wait before next check
@@ -1008,12 +1099,14 @@ async function waitForLoginCompletion(page: Page, liveViewUrl: string) {
       const remaining = Math.floor((maxWait - elapsed) / 1000);
       broadcastToClients({
         type: 'automation_progress',
-        message: `Waiting for login completion (${remaining}s remaining)...`,
+        message: `Still waiting for login completion (${remaining}s remaining)...`,
+        step: 'login_wait',
         liveViewUrl: liveViewUrl
       });
     }
   }
 
+  console.log("❌ Login detection timeout reached");
   return false; // Timeout
 }
 
