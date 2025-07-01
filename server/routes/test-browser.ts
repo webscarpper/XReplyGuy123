@@ -1361,40 +1361,129 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       if (commentBox) {
         console.log("📝 Clicking comment box...");
         await cursor.click(commentBox.first());
-        await page.waitForTimeout(1000 + Math.random() * 500);
+        await page.waitForTimeout(500);
 
-        console.log("⌨️ Typing comment...");
-        await page.keyboard.type('GM! 🌅', { delay: 150 + Math.random() * 100 });
-        await page.waitForTimeout(2000 + Math.random() * 1000);
+        // Ensure proper focus and clear any existing content
+        await commentBox.first().focus();
+        await page.keyboard.selectAll();
+        await page.keyboard.press('Delete');
+        await page.waitForTimeout(300);
 
-        // Step 11: Submit reply
+        // Type meaningful content that meets Twitter requirements
+        const replyText = "GM! Hope you're having a great day! 🌅 Thanks for sharing this!";
+        console.log("⌨️ Typing enhanced comment...");
+        await page.keyboard.type(replyText, { delay: 80 + Math.random() * 40 });
+
+        // Wait for Twitter's content validation
+        await page.waitForTimeout(2000);
+
+        // Validate content meets requirements
+        await validateReplyContent(page, commentBox.first());
+
+        // Additional wait for UI state to update
+        await page.waitForTimeout(1000);
+
+        // Step 11: Submit reply with button state validation
         console.log("📤 Looking for submit button...");
-        
-        const submitSelectors = [
-          '[data-testid="tweetButtonInline"]',
-          'button[data-testid*="tweet"]',
-          'button:has-text("Reply")',
-          'button:has-text("Post")'
-        ];
+        const submitButton = page.locator('[data-testid="tweetButtonInline"]');
+        await submitButton.waitFor({ state: 'visible', timeout: 10000 });
 
-        let submitButton = null;
-        for (const selector of submitSelectors) {
+        // OFFICIAL: Wait for button to become enabled
+        console.log("⏳ Waiting for reply button to become enabled...");
+        let buttonEnabled = false;
+        let attempts = 0;
+        const maxAttempts = 15; // 30 seconds total
+
+        while (!buttonEnabled && attempts < maxAttempts) {
           try {
-            submitButton = page.locator(selector);
-            await submitButton.waitFor({ state: 'visible', timeout: 5000 });
-            console.log(`✅ Found submit button with selector: ${selector}`);
-            break;
-          } catch (e) {
-            continue;
+            // OFFICIAL: Check if button is enabled using Playwright's isEnabled()
+            buttonEnabled = await submitButton.isEnabled();
+            
+            if (buttonEnabled) {
+              console.log("✅ Reply button is now enabled!");
+              break;
+            } else {
+              console.log(`⏳ Button still disabled, attempt ${attempts + 1}/${maxAttempts}`);
+              
+              // Try triggering content validation
+              if (attempts === 5) {
+                // Add a space and remove it to trigger validation
+                await commentBox.first().focus();
+                await page.keyboard.press('Space');
+                await page.waitForTimeout(100);
+                await page.keyboard.press('Backspace');
+              }
+              
+              await page.waitForTimeout(2000);
+              attempts++;
+            }
+          } catch (error) {
+            console.log("⚠️ Error checking button state:", error.message);
+            attempts++;
+            await page.waitForTimeout(2000);
           }
         }
 
-        if (submitButton) {
-          console.log("📤 Submitting reply...");
-          await cursor.click(submitButton);
-          await page.waitForTimeout(3000);
-        } else {
-          console.log("⚠️ Submit button not found, reply not submitted");
+        if (!buttonEnabled) {
+          // OFFICIAL: Try alternative submit button selectors
+          console.log("⚠️ Primary button still disabled, trying alternatives...");
+          
+          const alternativeSelectors = [
+            '[data-testid="tweetButton"]',
+            'button[type="submit"]',
+            '[role="button"]:has-text("Reply")',
+            'button:has-text("Reply")'
+          ];
+          
+          for (const selector of alternativeSelectors) {
+            try {
+              const altButton = page.locator(selector);
+              await altButton.waitFor({ state: 'visible', timeout: 3000 });
+              
+              const isEnabled = await altButton.isEnabled();
+              if (isEnabled) {
+                console.log(`✅ Found enabled alternative button: ${selector}`);
+                await cursor.click(altButton);
+                await page.waitForTimeout(2000);
+                
+                broadcastToClients({
+                  type: 'automation_complete',
+                  message: 'Reply submitted successfully with alternative button!',
+                  sessionId: sessionId,
+                  liveViewUrl: liveViewUrl
+                });
+                return; // Exit function if successful
+              }
+            } catch (error) {
+              console.log(`⚠️ Alternative ${selector} not found or disabled`);
+            }
+          }
+          
+          throw new Error("All reply buttons are disabled - content may not meet Twitter requirements");
+        }
+
+        // OFFICIAL: Click the enabled button
+        console.log("📤 Submitting reply...");
+        await cursor.click(submitButton);
+        await page.waitForTimeout(3000);
+
+        // OFFICIAL: Verify submission success
+        try {
+          // Check if modal closed (indicates success)
+          const modalStillOpen = await page.locator('[data-testid="tweetTextarea_0"]').isVisible();
+          if (!modalStillOpen) {
+            console.log("✅ Reply submitted successfully - modal closed");
+          } else {
+            console.log("⚠️ Modal still open - checking for error messages");
+            
+            // Look for error messages
+            const errorMessage = await page.locator('[role="alert"]').textContent().catch(() => null);
+            if (errorMessage) {
+              console.log("❌ Twitter error:", errorMessage);
+            }
+          }
+        } catch (error) {
+          console.log("⚠️ Could not verify submission status");
         }
       } else {
         console.log("⚠️ Comment box not found, skipping reply");
@@ -1428,6 +1517,36 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       sessionId: sessionId,
       liveViewUrl: liveViewUrl
     });
+  }
+}
+
+// OFFICIAL: Validate reply content meets Twitter requirements
+async function validateReplyContent(page: Page, commentBox: any) {
+  try {
+    // Get current text content
+    const currentText = await commentBox.inputValue();
+    console.log(`📝 Current text: "${currentText}"`);
+    
+    // Check text length (Twitter minimum is usually 1 character, but longer is better)
+    if (currentText.length < 10) {
+      console.log("⚠️ Text too short, adding more content...");
+      
+      // Add more content
+      await commentBox.focus();
+      await page.keyboard.press('End'); // Go to end of text
+      await page.keyboard.type(" Thanks for sharing! 👍", { delay: 50 });
+      await page.waitForTimeout(1000);
+    }
+    
+    // Trigger content validation by simulating user behavior
+    await commentBox.focus();
+    await page.keyboard.press('End');
+    await page.waitForTimeout(500);
+    
+    return true;
+  } catch (error) {
+    console.log("⚠️ Content validation error:", error.message);
+    return false;
   }
 }
 
