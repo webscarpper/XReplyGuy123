@@ -165,10 +165,14 @@ router.post("/test-connection", async (req, res) => {
     console.log("Connected to Browserbase session successfully");
     isConnected = true;
 
+    // Get live view URL for immediate use
+    const liveViewUrl = (currentSession as any).debuggerFullscreenUrl || (currentSession as any).liveUrls?.connect;
+
     res.json({
       success: true,
       message: "Successfully connected to Browserbase",
       sessionId: currentSession.id,
+      liveViewUrl: liveViewUrl || null,
       status: "connected"
     });
 
@@ -305,7 +309,6 @@ router.get("/screenshot", async (req, res) => {
     console.log("Taking screenshot...");
     
     const screenshot = await currentPage.screenshot({
-      encoding: 'base64',
       fullPage: false,
       type: 'png'
     });
@@ -315,7 +318,7 @@ router.get("/screenshot", async (req, res) => {
 
     res.json({
       success: true,
-      screenshot: `data:image/png;base64,${screenshot}`,
+      screenshot: `data:image/png;base64,${screenshot.toString('base64')}`,
       currentUrl,
       title,
       timestamp: new Date().toISOString()
@@ -331,7 +334,7 @@ router.get("/screenshot", async (req, res) => {
   }
 });
 
-// Start live streaming (using Browserbase live view)
+// Start live streaming (using Browserbase native live view)
 router.post("/start-streaming", async (req, res) => {
   try {
     if (!currentSession || !isConnected) {
@@ -342,20 +345,54 @@ router.post("/start-streaming", async (req, res) => {
     }
 
     if (isStreaming) {
+      const liveViewUrl = (currentSession as any).debuggerFullscreenUrl || (currentSession as any).liveUrls?.connect;
       return res.json({
         success: true,
         message: "Live streaming already active",
-        liveViewUrl: currentSession.liveUrls?.connect
+        liveViewUrl
       });
     }
 
-    console.log("Starting Browserbase live streaming...");
+    console.log("Starting Browserbase live view...");
     
-    // Get live view URL from Browserbase
-    const liveViewUrl = currentSession.liveUrls?.connect;
+    // Get live view URL from Browserbase - use debuggerFullscreenUrl for iframe embedding
+    const liveViewUrl = (currentSession as any).debuggerFullscreenUrl || (currentSession as any).liveUrls?.connect;
     
     if (!liveViewUrl) {
-      throw new Error("Live view URL not available");
+      // Try to retrieve session details to get live URLs
+      try {
+        const sessionDetails = await browserbase.sessions.retrieve(currentSession.id);
+        const refreshedLiveUrl = (sessionDetails as any).debuggerFullscreenUrl || (sessionDetails as any).liveUrls?.connect;
+        
+        if (!refreshedLiveUrl) {
+          throw new Error("Live view URL not available - session may not be ready");
+        }
+        
+        currentSession = sessionDetails; // Update with latest session data
+        
+        // Broadcast live view URL to all connected WebSocket clients
+        streamingSockets.forEach(ws => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: 'live_view_url',
+              url: refreshedLiveUrl,
+              message: 'Live view ready for iframe embedding'
+            }));
+          }
+        });
+
+        isStreaming = true;
+        console.log("Browserbase live view started successfully with URL:", refreshedLiveUrl);
+
+        return res.json({
+          success: true,
+          message: "Live view started",
+          liveViewUrl: refreshedLiveUrl,
+          status: "streaming"
+        });
+      } catch (retrieveError) {
+        throw new Error(`Failed to retrieve live view URL: ${retrieveError}`);
+      }
     }
 
     // Broadcast live view URL to all connected WebSocket clients
@@ -363,27 +400,29 @@ router.post("/start-streaming", async (req, res) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'live_view_url',
-          url: liveViewUrl
+          url: liveViewUrl,
+          message: 'Live view ready for iframe embedding'
         }));
       }
     });
 
     isStreaming = true;
-    console.log("Browserbase live streaming started successfully");
+    console.log("Browserbase live view started successfully");
 
     res.json({
       success: true,
-      message: "Live streaming started",
+      message: "Live view started",
       liveViewUrl,
       status: "streaming"
     });
 
   } catch (error: any) {
-    console.error("Start streaming error:", error);
+    console.error("Start live view error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to start live streaming",
-      error: error.message
+      message: "Failed to start live view",
+      error: error.message,
+      details: "Ensure Browserbase session is properly initialized"
     });
   }
 });
@@ -394,35 +433,36 @@ router.post("/stop-streaming", async (req, res) => {
     if (!isStreaming) {
       return res.json({
         success: true,
-        message: "Live streaming not active"
+        message: "Live view not active"
       });
     }
 
-    console.log("Stopping live streaming...");
+    console.log("Stopping Browserbase live view...");
     
-    // Notify all connected clients
+    // Notify all connected clients that live view is stopping
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
-          type: 'streaming_stopped'
+          type: 'live_view_stopped',
+          message: 'Live view has been stopped'
         }));
       }
     });
 
     isStreaming = false;
-    console.log("Live streaming stopped");
+    console.log("Browserbase live view stopped");
 
     res.json({
       success: true,
-      message: "Live streaming stopped",
+      message: "Live view stopped",
       status: "stopped"
     });
 
   } catch (error: any) {
-    console.error("Stop streaming error:", error);
+    console.error("Stop live view error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to stop live streaming",
+      message: "Failed to stop live view",
       error: error.message
     });
   }
