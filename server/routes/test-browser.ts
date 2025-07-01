@@ -1365,7 +1365,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 
         // Ensure proper focus and clear any existing content
         await commentBox.first().focus();
-        await page.keyboard.selectAll();
+        await page.keyboard.press('Control+a');
         await page.keyboard.press('Delete');
         await page.waitForTimeout(300);
 
