@@ -120,6 +120,7 @@ export default function TestBrowser() {
             }));
             break;
           case 'automation_complete':
+            // Handle both regular automation and test script
             setAutomation(prev => ({
               ...prev,
               running: false,
@@ -127,14 +128,23 @@ export default function TestBrowser() {
               progress: 100,
               message: 'Automation completed successfully'
             }));
+            setIsTestScriptRunning(false);
+            setShowManualIntervention(false);
+            setAutomationStatus('');
+            console.log('🎉 Test automation completed successfully!');
             break;
           case 'automation_error':
+            // Handle both regular automation and test script
             setAutomation(prev => ({
               ...prev,
               running: false,
               status: 'error',
               message: data.error || 'Automation failed'
             }));
+            setIsTestScriptRunning(false);
+            setShowManualIntervention(false);
+            setAutomationStatus('');
+            console.error('Automation failed:', data.error);
             break;
           case 'session_closed':
             setLiveViewUrl(null);
@@ -146,18 +156,6 @@ export default function TestBrowser() {
           case 'login_detected':
             setShowManualIntervention(false);
             setAutomationStatus('Login detected! Continuing automation...');
-            break;
-          case 'automation_complete':
-            setIsTestScriptRunning(false);
-            setShowManualIntervention(false);
-            setAutomationStatus('');
-            // Show success notification
-            break;
-          case 'automation_error':
-            setIsTestScriptRunning(false);
-            setShowManualIntervention(false);
-            setAutomationStatus('');
-            console.error('Automation failed:', data.error);
             break;
         }
       };
@@ -512,12 +510,47 @@ export default function TestBrowser() {
               </CardContent>
             </Card>
 
+            {/* Test Script */}
+            <Card className="bg-black/50 border-purple-500/20">
+              <CardHeader>
+                <CardTitle className="text-white">Complete Test Script</CardTitle>
+                <CardDescription className="text-gray-300">
+                  End-to-end automation with manual login handoff
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isTestScriptRunning && automationStatus && (
+                  <div className="p-3 bg-blue-900/50 rounded-lg border border-blue-500/30">
+                    <p className="text-blue-300 text-sm">{automationStatus}</p>
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleTestScript}
+                  disabled={isTestScriptRunning}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                >
+                  {isTestScriptRunning ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Running Test Script...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Test Script
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+
             {/* Twitter Automation */}
             <Card className="bg-black/50 border-purple-500/20">
               <CardHeader>
                 <CardTitle className="text-white">Twitter Automation Test</CardTitle>
                 <CardDescription className="text-gray-300">
-                  Test complete automation workflow
+                  Test complete automation workflow (requires credentials)
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -595,7 +628,24 @@ export default function TestBrowser() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="h-[800px]">
-                {liveViewUrl ? (
+                {showManualIntervention && testScriptLiveViewUrl ? (
+                  <div className="h-full">
+                    <div className="mb-4 p-4 bg-yellow-900/50 rounded-lg border border-yellow-500/30">
+                      <h3 className="text-lg font-semibold text-yellow-300 mb-2">Manual Action Required</h3>
+                      <p className="text-yellow-200">{automationStatus}</p>
+                      <p className="text-sm text-yellow-200 mt-2">
+                        Complete the login above. Automation will continue automatically once login is detected.
+                      </p>
+                    </div>
+                    <iframe
+                      src={testScriptLiveViewUrl}
+                      className="w-full h-[680px] border-0 rounded-lg bg-white"
+                      title="Test Script Manual Intervention"
+                      allow="camera; microphone; display-capture; clipboard-read; clipboard-write"
+                      sandbox="allow-same-origin allow-scripts"
+                    />
+                  </div>
+                ) : liveViewUrl ? (
                   <iframe
                     ref={iframeRef}
                     src={liveViewUrl}

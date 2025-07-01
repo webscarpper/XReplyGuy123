@@ -22,6 +22,12 @@ let isStreaming = false;
 let streamingSockets = new Set<WebSocket>();
 let sessionTimeout: NodeJS.Timeout | null = null;
 
+// Test script session management
+let testSession: any = null;
+let testBrowser: Browser | null = null;
+let testContext: BrowserContext | null = null;
+let testPage: Page | null = null;
+
 // Request schemas
 const navigateSchema = z.object({
   url: z.string().url()
@@ -87,6 +93,15 @@ export function handleBrowserWebSocket(ws: WebSocket) {
   ws.on('close', () => {
     console.log("Browser control WebSocket disconnected");
     streamingSockets.delete(ws);
+  });
+}
+
+// Helper function to broadcast messages to WebSocket clients
+function broadcastToClients(message: any) {
+  streamingSockets.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+    }
   });
 }
 
@@ -792,6 +807,326 @@ async function performAutomatedLogin(username: string, password: string) {
     console.error('Automated login failed:', error);
     throw new Error(`Automated login failed: ${error.message}`);
   }
+}
+
+// POST /api/test-browser/test-script - Complete automation with handoff
+router.post("/test-script", async (req, res) => {
+  try {
+    console.log("🚀 Starting complete test script automation...");
+
+    // 1. Create new Browserbase session
+    const session = await browserbase.sessions.create({
+      projectId: process.env.BROWSERBASE_PROJECT_ID!,
+      browserSettings: {
+        viewport: { width: 1280, height: 720 },
+        fingerprint: {
+          devices: ["desktop"],
+          locales: ["en-US"],
+          operatingSystems: ["windows"]
+        }
+      },
+      proxies: true,
+      timeout: 3600000 // 1 hour
+    });
+
+    console.log("✅ Session created:", session.id);
+
+    // 2. Connect to browser
+    const browser = await chromium.connectOverCDP(session.connectUrl);
+    const defaultContext = browser.contexts()[0];
+    const page = defaultContext.pages()[0];
+
+    // Store session globally for cleanup
+    testSession = session;
+    testBrowser = browser;
+    testContext = defaultContext;
+    testPage = page;
+
+    // 3. Get live view URL
+    const liveViewLinks = await browserbase.sessions.debug(session.id);
+    const liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+
+    // 4. Navigate to Twitter login
+    console.log("🌐 Navigating to Twitter login...");
+    await page.goto('https://x.com/i/flow/login', {
+      waitUntil: 'networkidle',
+      timeout: 30000
+    });
+
+    // 5. Check if login is needed
+    const needsLogin = await checkIfLoginNeeded(page);
+
+    if (needsLogin) {
+      // 6. Request manual intervention
+      console.log("🔐 Manual login required");
+      
+      // Notify WebSocket clients
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Please complete login to continue automation',
+        step: 'manual_login'
+      });
+
+      res.json({
+        success: true,
+        status: 'manual_intervention_required',
+        liveViewUrl: liveViewUrl,
+        message: 'Please complete login in the browser above',
+        sessionId: session.id
+      });
+
+      // 7. Wait for login completion in background
+      waitForLoginAndContinue(page, session.id);
+
+    } else {
+      // Already logged in, continue directly
+      console.log("✅ Already logged in, continuing automation...");
+      res.json({
+        success: true,
+        status: 'continuing_automation',
+        message: 'Already logged in, continuing with automation'
+      });
+
+      // Continue with automation
+      performTestAutomation(page, session.id);
+    }
+
+  } catch (error: any) {
+    console.error("❌ Test script error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Check if login is needed
+async function checkIfLoginNeeded(page: Page) {
+  try {
+    // Check for login form elements
+    const loginButton = await page.$('[data-testid="LoginForm_Login_Button"]');
+    const emailInput = await page.$('[name="text"]');
+    const passwordInput = await page.$('[name="password"]');
+    
+    return !!(loginButton || emailInput || passwordInput);
+  } catch (error) {
+    return true; // Assume login needed if check fails
+  }
+}
+
+// Wait for login completion and continue automation
+async function waitForLoginAndContinue(page: Page, sessionId: string) {
+  try {
+    console.log("⏳ Waiting for login completion...");
+    
+    const loginDetected = await waitForLoginCompletion(page);
+    
+    if (loginDetected) {
+      console.log("✅ Login detected! Continuing automation...");
+      
+      // Notify clients
+      broadcastToClients({
+        type: 'login_detected',
+        message: 'Login successful! Continuing automation...',
+        sessionId: sessionId
+      });
+
+      // Continue with automation
+      await performTestAutomation(page, sessionId);
+    } else {
+      // Timeout
+      broadcastToClients({
+        type: 'automation_error',
+        error: 'Login timeout - please try again',
+        sessionId: sessionId
+      });
+    }
+  } catch (error: any) {
+    console.error("❌ Login wait error:", error);
+    broadcastToClients({
+      type: 'automation_error',
+      error: error.message,
+      sessionId: sessionId
+    });
+  }
+}
+
+// Login detection function
+async function waitForLoginCompletion(page: Page) {
+  const maxWait = 300000; // 5 minutes
+  const checkInterval = 2000; // 2 seconds
+  let elapsed = 0;
+
+  while (elapsed < maxWait) {
+    try {
+      // Method 1: Check for authenticated UI elements
+      const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
+      const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
+      const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
+      
+      if (homeButton || profileButton || composeButton) {
+        return true;
+      }
+
+      // Method 2: Check URL patterns
+      const currentUrl = await page.url();
+      if (currentUrl.includes('/home') || 
+          (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/flow'))) {
+        return true;
+      }
+
+      // Method 3: Check for tweet composer
+      const tweetComposer = await page.$('[data-testid="tweetTextarea_0"]');
+      if (tweetComposer) {
+        return true;
+      }
+
+    } catch (error) {
+      console.log("Login check error:", error);
+    }
+
+    // Wait before next check
+    await new Promise(resolve => setTimeout(resolve, checkInterval));
+    elapsed += checkInterval;
+
+    // Send periodic updates
+    if (elapsed % 30000 === 0) { // Every 30 seconds
+      const remaining = Math.floor((maxWait - elapsed) / 1000);
+      broadcastToClients({
+        type: 'automation_progress',
+        message: `Waiting for login completion (${remaining}s remaining)...`
+      });
+    }
+  }
+
+  return false; // Timeout
+}
+
+// Perform the actual test automation
+async function performTestAutomation(page: Page, sessionId: string) {
+  try {
+    console.log("🤖 Starting test automation sequence...");
+
+    // Update status
+    broadcastToClients({
+      type: 'automation_progress',
+      message: 'Navigating to home feed...',
+      step: 'navigation'
+    });
+
+    // 1. Navigate to home feed
+    await page.goto('https://x.com/home', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(3000);
+
+    // 2. Scroll to find posts
+    broadcastToClients({
+      type: 'automation_progress',
+      message: 'Scrolling to find posts...',
+      step: 'scrolling'
+    });
+
+    await scrollToLoadPosts(page, 4);
+
+    // 3. Find and click 4th post
+    const posts = await page.$$('[data-testid="tweet"]');
+    if (posts.length >= 4) {
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Opening 4th post...',
+        step: 'post_interaction'
+      });
+
+      await posts[3].click();
+      await page.waitForTimeout(4000); // Wait 4 seconds as requested
+
+      // 4. Try to open comment section
+      const replyButton = await page.$('[data-testid="reply"]');
+      if (replyButton) {
+        await replyButton.click();
+        
+        broadcastToClients({
+          type: 'automation_progress',
+          message: 'Opening comment section...',
+          step: 'commenting'
+        });
+
+        // Wait for comment box
+        await page.waitForSelector('[data-testid="tweetTextarea_0"]', { timeout: 5000 });
+
+        // Scroll down and up in comments
+        await page.evaluate(() => window.scrollBy(0, 300));
+        await page.waitForTimeout(2000);
+        await page.evaluate(() => window.scrollBy(0, -300));
+        await page.waitForTimeout(2000);
+
+        // Type comment
+        const commentBox = await page.$('[data-testid="tweetTextarea_0"]');
+        if (commentBox) {
+          await commentBox.type("Interesting", { delay: 100 });
+          
+          // Submit comment
+          const submitButton = await page.$('[data-testid="tweetButtonInline"]');
+          if (submitButton) {
+            await submitButton.click();
+            console.log("✅ Comment posted successfully");
+          }
+        }
+      }
+
+      // 5. Go back to feed
+      await page.goBack();
+      await page.waitForTimeout(2000);
+
+      // 6. Continue scrolling
+      await page.evaluate(() => window.scrollBy(0, 500));
+    }
+
+    // 7. Automation complete
+    console.log("🎉 Test automation completed successfully!");
+    
+    broadcastToClients({
+      type: 'automation_complete',
+      message: 'Test automation completed successfully!',
+      sessionId: sessionId,
+      summary: {
+        login: '✅ Login completed',
+        navigation: '✅ Navigated to feed',
+        interaction: '✅ Interacted with 4th post',
+        commenting: '✅ Posted comment',
+        completion: '✅ Returned to feed'
+      }
+    });
+
+  } catch (error: any) {
+    console.error("❌ Automation error:", error);
+    broadcastToClients({
+      type: 'automation_error',
+      error: error.message,
+      sessionId: sessionId
+    });
+  }
+}
+
+// Helper function to scroll and load posts
+async function scrollToLoadPosts(page: Page, targetPostCount: number) {
+  let attempts = 0;
+  const maxAttempts = 10;
+  
+  while (attempts < maxAttempts) {
+    const posts = await page.$$('[data-testid="tweet"]');
+    
+    if (posts.length >= targetPostCount) {
+      console.log(`✅ Found ${posts.length} posts`);
+      return;
+    }
+    
+    console.log(`Found ${posts.length} posts, scrolling for more...`);
+    await page.evaluate(() => window.scrollBy(0, 800));
+    await page.waitForTimeout(2000);
+    attempts++;
+  }
+  
+  console.log(`Stopped after ${maxAttempts} scroll attempts`);
 }
 
 export default router;
