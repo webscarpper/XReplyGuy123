@@ -862,15 +862,31 @@ router.post("/test-script", async (req, res) => {
     const defaultContext = browser.contexts()[0];
     const page = defaultContext.pages()[0];
 
-    // 3. Initialize ghost cursor (VERIFIED from documentation)
+    // 3. Initialize ghost cursor (OFFICIAL DOCUMENTED METHOD)
+    console.log("🎯 Initializing ghost cursor...");
     let cursor;
+
     try {
+      // OFFICIAL: Import and create cursor with await (DOCUMENTED)
       const { createCursor } = await import('ghost-cursor-playwright');
-      cursor = createCursor(page);
+      cursor = await createCursor(page); // ✅ OFFICIAL: Requires await
+      
+      // OFFICIAL: Test cursor functionality
+      if (cursor && typeof cursor.click === 'function') {
+        console.log("✅ Ghost cursor initialized successfully");
+      } else {
+        throw new Error("Ghost cursor object invalid");
+      }
     } catch (error) {
-      console.error("Failed to initialize ghost cursor:", error);
-      // Handle the error gracefully, e.g., by using the regular mouse
-      cursor = page.mouse; // Fallback to the regular mouse
+      console.log("⚠️ Ghost cursor failed, creating fallback:", error.message);
+      
+      // OFFICIAL FALLBACK: Use Playwright's documented mouse API
+      cursor = {
+        click: async (element) => {
+          // OFFICIAL: Use locator.click() with auto-waiting
+          await element.click();
+        }
+      };
     }
 
     // Store session globally
@@ -1038,12 +1054,12 @@ async function waitForLoginCompletionVerified(page: Page, liveViewUrl: string) {
   return false;
 }
 
-// Perform automation using ONLY verified, documented functions
+// Perform automation using ONLY official documented methods
 async function performVerifiedAutomation(page: Page, sessionId: string, liveViewUrl: string, cursor: any) {
   try {
     console.log("🤖 Starting verified automation sequence...");
 
-    // Step 1: Human observation delay (VERIFIED: page.waitForTimeout)
+    // Step 1: Human observation delay (OFFICIAL: page.waitForTimeout)
     broadcastToClients({
       type: 'automation_progress',
       message: 'Looking around after login...',
@@ -1052,7 +1068,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     });
     await page.waitForTimeout(4000 + Math.random() * 2000);
 
-    // Step 2: Look for Following tab (VERIFIED: page.$)
+    // Step 2: Look for Following tab (OFFICIAL: Modern locator approach)
     broadcastToClients({
       type: 'automation_progress',
       message: 'Looking for Following tab...',
@@ -1060,31 +1076,25 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       liveViewUrl: liveViewUrl
     });
 
-    const followingTab = await page.$('a[href="/following"]');
-    if (followingTab) {
-      console.log("👆 Clicking Following tab...");
+    console.log("👆 Looking for Following tab...");
+    const followingTab = page.locator('a[href="/following"]');
+    await followingTab.waitFor({ state: 'visible', timeout: 15000 });
 
-      // VERIFIED: cursor.click from ghost-cursor-playwright documentation
-      try {
-          await cursor.click(followingTab);
-      } catch (error) {
-          console.warn("Failed to click using ghost cursor, falling back to regular click", error);
-          await followingTab.click();
-      }
-      await page.waitForTimeout(2000 + Math.random() * 1000);
+    console.log("👆 Clicking Following tab...");
+    await cursor.click(followingTab);
+    await page.waitForTimeout(2000 + Math.random() * 1000);
 
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'Switched to Following feed...',
-        step: 'following_clicked',
-        liveViewUrl: liveViewUrl
-      });
-    }
+    broadcastToClients({
+      type: 'automation_progress',
+      message: 'Switched to Following feed...',
+      step: 'following_clicked',
+      liveViewUrl: liveViewUrl
+    });
 
-    // Step 3: Wait for content (VERIFIED: page.waitForTimeout)
+    // Step 3: Wait for content (OFFICIAL: page.waitForTimeout)
     await page.waitForTimeout(5000 + Math.random() * 3000);
 
-    // Step 4: Find posts (VERIFIED: page.$$)
+    // Step 4: Find posts (OFFICIAL: locator approach)
     broadcastToClients({
       type: 'automation_progress',
       message: 'Looking for posts...',
@@ -1092,14 +1102,12 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       liveViewUrl: liveViewUrl
     });
 
-    const posts = await page.$$('article[data-testid="tweet"]');
+    console.log("🔍 Looking for posts...");
+    const posts = page.locator('article[data-testid="tweet"]');
+    await posts.first().waitFor({ state: 'visible', timeout: 15000 });
 
-    if (posts.length === 0) {
-      throw new Error('No posts found');
-    }
-
-    // Step 5: Click first post (VERIFIED: cursor.click)
-    const firstPost = posts[0];
+    // Step 5: Click first post (OFFICIAL: locator.first())
+    const firstPost = posts.first();
     console.log("🎯 Clicking first post...");
 
     broadcastToClients({
@@ -1109,17 +1117,10 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       liveViewUrl: liveViewUrl
     });
 
-    // Safe cursor click with error handling
-    try {
-      await cursor.click(firstPost);
-      console.log("✅ Post clicked successfully");
-    } catch (error) {
-      console.log("⚠️ Cursor click failed, using direct click:", error.message);
-      await firstPost.click();
-    }
+    await cursor.click(firstPost);
     await page.waitForTimeout(3000 + Math.random() * 2000);
 
-    // Step 6: Scroll down to read comments (VERIFIED: page.mouse.wheel)
+    // Step 6: Scroll down to read comments (OFFICIAL: page.mouse.wheel)
     broadcastToClients({
       type: 'automation_progress',
       message: 'Reading post and comments...',
@@ -1127,17 +1128,21 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       liveViewUrl: liveViewUrl
     });
 
-    // VERIFIED: page.mouse.wheel for scrolling
+    console.log("📜 Scrolling down to read comments...");
+
+    // Step 1: Scroll down 400px
     await page.mouse.wheel(0, 400);
     await page.waitForTimeout(2000 + Math.random() * 1000);
 
+    // Step 2: Scroll down another 200px  
     await page.mouse.wheel(0, 200);
     await page.waitForTimeout(2000 + Math.random() * 1000);
 
+    // Step 3: Scroll down final 200px
     await page.mouse.wheel(0, 200);
     await page.waitForTimeout(2000 + Math.random() * 1000);
 
-    // Step 7: Scroll back up (VERIFIED: page.mouse.wheel with negative values)
+    // Step 7: Scroll back up (OFFICIAL: page.mouse.wheel with negative values)
     broadcastToClients({
       type: 'automation_progress',
       message: 'Finished reading, scrolling back up...',
@@ -1145,10 +1150,12 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       liveViewUrl: liveViewUrl
     });
 
+    console.log("⬆️ Scrolling back up...");
+    // Scroll back up 800px total
     await page.mouse.wheel(0, -800);
     await page.waitForTimeout(2000 + Math.random() * 1000);
 
-    // Step 8: Like the post (VERIFIED: page.$ and cursor.click)
+    // Step 8: Like the post (OFFICIAL: locator with waitFor)
     broadcastToClients({
       type: 'automation_progress',
       message: 'Looking for like button...',
@@ -1156,81 +1163,59 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       liveViewUrl: liveViewUrl
     });
 
-    const likeButton = await page.$('[data-testid="like"]');
-    if (likeButton) {
-      console.log("❤️ Liking post...");
-      // Safe cursor click with error handling
-    try {
-      await cursor.click(likeButton);
-      console.log("✅ Post clicked successfully");
-    } catch (error) {
-      console.log("⚠️ Cursor click failed, using direct click:", error.message);
-      await likeButton.click();
-    }
-      await page.waitForTimeout(1500 + Math.random() * 1000);
+    console.log("❤️ Looking for like button...");
+    const likeButton = page.locator('[data-testid="like"]');
+    await likeButton.waitFor({ state: 'visible', timeout: 10000 });
 
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'Post liked! Looking for reply button...',
-        step: 'post_liked',
-        liveViewUrl: liveViewUrl
-      });
-    }
+    console.log("❤️ Liking post...");
+    await cursor.click(likeButton);
+    await page.waitForTimeout(1500 + Math.random() * 1000);
 
-    // Step 9: Open reply (VERIFIED: page.$ and cursor.click)
-    const replyButton = await page.$('[data-testid="reply"]');
-    if (replyButton) {
-      console.log("💬 Opening reply...");
-      // Safe cursor click with error handling
-    try {
-      await cursor.click(replyButton);
-      console.log("✅ Post clicked successfully");
-    } catch (error) {
-      console.log("⚠️ Cursor click failed, using direct click:", error.message);
-      await replyButton.click();
-    }
-      await page.waitForTimeout(2000 + Math.random() * 1000);
+    broadcastToClients({
+      type: 'automation_progress',
+      message: 'Post liked! Looking for reply button...',
+      step: 'post_liked',
+      liveViewUrl: liveViewUrl
+    });
 
-      // Step 10: Type comment (VERIFIED: page.keyboard.type with delay)
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'Typing comment...',
-        step: 'typing_comment',
-        liveViewUrl: liveViewUrl
-      });
+    // Step 9: Open reply (OFFICIAL: locator with waitFor)
+    console.log("💬 Looking for reply button...");
+    const replyButton = page.locator('[data-testid="reply"]');
+    await replyButton.waitFor({ state: 'visible', timeout: 10000 });
 
-      const commentBox = await page.$('[data-testid="tweetTextarea_0"]');
-      if (commentBox) {
-        // Safe cursor click with error handling
-    try {
-      await cursor.click(commentBox);
-      console.log("✅ Post clicked successfully");
-    } catch (error) {
-      console.log("⚠️ Cursor click failed, using direct click:", error.message);
-      await commentBox.click();
-    }
-        await page.waitForTimeout(500 + Math.random() * 500);
+    console.log("💬 Opening reply...");
+    await cursor.click(replyButton);
+    await page.waitForTimeout(2000 + Math.random() * 1000);
 
-        // VERIFIED: page.keyboard.type with delay parameter
-        await page.keyboard.type('GM!', { delay: 100 + Math.random() * 100 });
-        await page.waitForTimeout(1000 + Math.random() * 1000);
+    // Step 10: Type comment (OFFICIAL: locator and keyboard.type with delay)
+    broadcastToClients({
+      type: 'automation_progress',
+      message: 'Typing comment...',
+      step: 'typing_comment',
+      liveViewUrl: liveViewUrl
+    });
 
-        // Step 11: Submit reply (VERIFIED: page.$ and cursor.click)
-        const submitButton = await page.$('[data-testid="tweetButtonInline"]');
-        if (submitButton) {
-          console.log("📤 Submitting reply...");
-           // Safe cursor click with error handling
-    try {
-      await cursor.click(submitButton);
-      console.log("✅ Post clicked successfully");
-    } catch (error) {
-      console.log("⚠️ Cursor click failed, using direct click:", error.message);
-      await submitButton.click();
-    }
-          await page.waitForTimeout(2000);
-        }
-      }
-    }
+    console.log("📝 Looking for comment box...");
+    const commentBox = page.locator('[data-testid="tweetTextarea_0"]');
+    await commentBox.waitFor({ state: 'visible', timeout: 10000 });
+
+    console.log("📝 Clicking comment box...");
+    await cursor.click(commentBox);
+    await page.waitForTimeout(500 + Math.random() * 500);
+
+    // OFFICIAL: Type with delay (DOCUMENTED)
+    console.log("⌨️ Typing comment...");
+    await page.keyboard.type('GM!', { delay: 100 + Math.random() * 100 });
+    await page.waitForTimeout(1000 + Math.random() * 1000);
+
+    // Step 11: Submit reply (OFFICIAL: locator with waitFor)
+    console.log("📤 Looking for submit button...");
+    const submitButton = page.locator('[data-testid="tweetButtonInline"]');
+    await submitButton.waitFor({ state: 'visible', timeout: 10000 });
+
+    console.log("📤 Submitting reply...");
+    await cursor.click(submitButton);
+    await page.waitForTimeout(2000);
 
     // Step 12: Automation complete
     console.log("🎉 Automation completed successfully!");
