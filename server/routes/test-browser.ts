@@ -826,7 +826,7 @@ router.post("/test-script", async (req, res) => {
         }
       },
       proxies: true,
-      timeout: 3600000 // 1 hour
+      timeout: 3600 // 1 hour in seconds
     });
 
     console.log("✅ Session created:", session.id);
