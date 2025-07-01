@@ -139,7 +139,7 @@ async function cleanupSession() {
     currentContext = null;
   }
 
-  // Close browser if exists (CORRECT: use browser.close(), NOT session.close())
+  // Close browser if exists
   if (currentBrowser) {
     try {
       await currentBrowser.close();
@@ -149,8 +149,18 @@ async function cleanupSession() {
     currentBrowser = null;
   }
 
-  // Reset session - Session automatically terminates when browser connection closes
-  currentSession = null;
+  // CORRECT: Properly terminate Browserbase session
+  if (currentSession) {
+    try {
+      console.log("Terminating Browserbase session:", currentSession.id);
+      await browserbase.sessions.update(currentSession.id, { status: 'REQUEST_TERMINATION' });
+      console.log("Browserbase session terminated successfully");
+    } catch (e) {
+      console.log("Browserbase session termination error:", e);
+    }
+    currentSession = null;
+  }
+
   isConnected = false;
 
   // Notify all connected clients
@@ -600,6 +610,20 @@ router.delete("/session", async (req, res) => {
   try {
     console.log("Terminating browser session...");
     await cleanupSession();
+
+    // Also cleanup test session if it exists
+    if (testSession) {
+      try {
+        console.log("Terminating test session:", testSession.id);
+        await browserbase.sessions.update(testSession.id, { status: 'REQUEST_TERMINATION' });
+        testSession = null;
+        testBrowser = null;
+        testContext = null;
+        testPage = null;
+      } catch (e) {
+        console.log("Test session termination error:", e);
+      }
+    }
 
     res.json({
       success: true,
