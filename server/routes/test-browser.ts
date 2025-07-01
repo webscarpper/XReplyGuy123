@@ -4,7 +4,7 @@ import WebSocket from "ws";
 import { Browserbase } from "@browserbasehq/sdk";
 import { chromium } from "playwright-core";
 import { Page, Browser, BrowserContext } from "playwright-core";
-import { createCursor } from "ghost-cursor-playwright";
+// Ghost cursor will be imported dynamically with error handling
 
 const router = Router();
 
@@ -863,7 +863,15 @@ router.post("/test-script", async (req, res) => {
     const page = defaultContext.pages()[0];
 
     // 3. Initialize ghost cursor (VERIFIED from documentation)
-    const cursor = createCursor(page);
+    let cursor;
+    try {
+      const { createCursor } = await import('ghost-cursor-playwright');
+      cursor = createCursor(page);
+    } catch (error) {
+      console.error("Failed to initialize ghost cursor:", error);
+      // Handle the error gracefully, e.g., by using the regular mouse
+      cursor = page.mouse; // Fallback to the regular mouse
+    }
 
     // Store session globally
     testSession = session;
@@ -990,7 +998,7 @@ async function waitForLoginCompletionVerified(page: Page, liveViewUrl: string) {
       const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
       const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
       const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
-      
+
       if (homeButton || profileButton || composeButton) {
         return true;
       }
@@ -1055,11 +1063,16 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     const followingTab = await page.$('a[href="/following"]');
     if (followingTab) {
       console.log("👆 Clicking Following tab...");
-      
+
       // VERIFIED: cursor.click from ghost-cursor-playwright documentation
-      await cursor.click(followingTab);
+      try {
+          await cursor.click(followingTab);
+      } catch (error) {
+          console.warn("Failed to click using ghost cursor, falling back to regular click", error);
+          await followingTab.click();
+      }
       await page.waitForTimeout(2000 + Math.random() * 1000);
-      
+
       broadcastToClients({
         type: 'automation_progress',
         message: 'Switched to Following feed...',
@@ -1080,7 +1093,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     });
 
     const posts = await page.$$('article[data-testid="tweet"]');
-    
+
     if (posts.length === 0) {
       throw new Error('No posts found');
     }
@@ -1096,7 +1109,12 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       liveViewUrl: liveViewUrl
     });
 
-    await cursor.click(firstPost);
+    try {
+        await cursor.click(firstPost);
+    } catch (error) {
+        console.warn("Failed to click using ghost cursor, falling back to regular click", error);
+        await firstPost.click();
+    }
     await page.waitForTimeout(3000 + Math.random() * 2000);
 
     // Step 6: Scroll down to read comments (VERIFIED: page.mouse.wheel)
@@ -1139,9 +1157,14 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     const likeButton = await page.$('[data-testid="like"]');
     if (likeButton) {
       console.log("❤️ Liking post...");
-      await cursor.click(likeButton);
+      try {
+          await cursor.click(likeButton);
+      } catch (error) {
+          console.warn("Failed to click using ghost cursor, falling back to regular click", error);
+          await likeButton.click();
+      }
       await page.waitForTimeout(1500 + Math.random() * 1000);
-      
+
       broadcastToClients({
         type: 'automation_progress',
         message: 'Post liked! Looking for reply button...',
@@ -1154,7 +1177,12 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     const replyButton = await page.$('[data-testid="reply"]');
     if (replyButton) {
       console.log("💬 Opening reply...");
-      await cursor.click(replyButton);
+      try {
+          await cursor.click(replyButton);
+      } catch (error) {
+          console.warn("Failed to click using ghost cursor, falling back to regular click", error);
+          await replyButton.click();
+      }
       await page.waitForTimeout(2000 + Math.random() * 1000);
 
       // Step 10: Type comment (VERIFIED: page.keyboard.type with delay)
@@ -1167,7 +1195,12 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 
       const commentBox = await page.$('[data-testid="tweetTextarea_0"]');
       if (commentBox) {
-        await cursor.click(commentBox);
+        try {
+            await cursor.click(commentBox);
+        } catch (error) {
+            console.warn("Failed to click using ghost cursor, falling back to regular click", error);
+            await commentBox.click();
+        }
         await page.waitForTimeout(500 + Math.random() * 500);
 
         // VERIFIED: page.keyboard.type with delay parameter
@@ -1178,7 +1211,12 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
         const submitButton = await page.$('[data-testid="tweetButtonInline"]');
         if (submitButton) {
           console.log("📤 Submitting reply...");
-          await cursor.click(submitButton);
+           try {
+                await cursor.click(submitButton);
+            } catch (error) {
+                console.warn("Failed to click using ghost cursor, falling back to regular click", error);
+                await submitButton.click();
+            }
           await page.waitForTimeout(2000);
         }
       }
@@ -1186,7 +1224,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 
     // Step 12: Automation complete
     console.log("🎉 Automation completed successfully!");
-    
+
     broadcastToClients({
       type: 'automation_complete',
       message: 'Human-like automation completed successfully!',
@@ -1216,35 +1254,35 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 async function checkIfLoginNeeded(page: Page) {
   try {
     console.log("🔍 Checking if login is needed...");
-    
+
     // Method 1: Check for login modal/dialog
     const loginModal = await page.$('[aria-labelledby*="modal-header"]');
     const signInModal = await page.$('div:has-text("Sign in to X")');
     const loginDialog = await page.$('[role="dialog"]');
-    
+
     // Method 2: Check for login form elements
     const loginButton = await page.$('[data-testid="LoginForm_Login_Button"]');
     const emailInput = await page.$('[name="text"]');
     const passwordInput = await page.$('[name="password"]');
     const usernameInput = await page.$('input[autocomplete="username"]');
-    
+
     // Method 3: Check for login-specific text content
     const signInText = await page.$('text="Sign in to X"');
     const loginText = await page.$('text="Log in"');
     const nextButtonText = await page.$('text="Next"');
-    
+
     // Method 4: Check current URL patterns
     const currentUrl = await page.url();
     const isLoginUrl = currentUrl.includes('/login') || 
                       currentUrl.includes('/flow/login') || 
                       currentUrl.includes('/i/flow/login');
-    
+
     // Method 5: Check for absence of authenticated elements
     const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
     const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
     const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
     const authenticatedElements = homeButton || profileButton || composeButton;
-    
+
     const loginNeeded = !!(
       loginModal || 
       signInModal || 
@@ -1259,7 +1297,7 @@ async function checkIfLoginNeeded(page: Page) {
       isLoginUrl ||
       !authenticatedElements
     );
-    
+
     console.log(`🔍 Login detection results:
       - Login modal/dialog found: ${!!(loginModal || signInModal || loginDialog)}
       - Login form elements found: ${!!(loginButton || emailInput || passwordInput || usernameInput)}
@@ -1267,20 +1305,12 @@ async function checkIfLoginNeeded(page: Page) {
       - Is login URL: ${isLoginUrl}
       - Authenticated elements missing: ${!authenticatedElements}
       - Final result: Login ${loginNeeded ? 'NEEDED' : 'NOT NEEDED'}`);
-    
+
     return loginNeeded;
   } catch (error) {
     console.log("⚠️ Login check failed, assuming login needed:", error);
     return true; // Assume login needed if check fails
   }
 }
-
-
-
-
-
-    
-
-
 
 export default router;
