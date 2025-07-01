@@ -200,20 +200,23 @@ router.post("/test-connection", async (req, res) => {
     // Cleanup existing session
     await cleanupSession();
 
-    // Create new Browserbase session with stealth configuration
-    console.log("Creating new Browserbase session with stealth settings...");
+    // Create new Browserbase session with Developer plan settings
+    console.log("Creating new Browserbase session with Developer plan settings...");
     currentSession = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
-        advancedStealth: true,
-        viewport: { width: 1280, height: 720 },
+        // Basic stealth mode (enabled by default in Developer plan)
+        viewport: { 
+          width: 1280, 
+          height: 720 
+        },
         fingerprint: {
           devices: ["desktop"],
           locales: ["en-US"],
           operatingSystems: ["windows"]
         }
       },
-      proxies: true,
+      proxies: true, // 1 GB included in Developer plan
       timeout: 3600000 // 1 hour
     });
 
@@ -246,10 +249,12 @@ router.post("/test-connection", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Successfully connected to Browserbase with stealth",
+      message: "Successfully connected to Browserbase with Developer plan features",
       sessionId: currentSession.id,
       liveViewUrl: liveViewUrl,
       stealthEnabled: true,
+      captchaSolving: true,
+      proxyEnabled: true,
       timeout: "1 hour",
       status: "connected"
     });

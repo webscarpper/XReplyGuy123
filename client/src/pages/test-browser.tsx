@@ -340,7 +340,7 @@ export default function TestBrowser() {
                   Browserbase Session
                 </CardTitle>
                 <CardDescription className="text-gray-300">
-                  Advanced stealth browser automation
+                  Basic stealth + Auto CAPTCHA solving + Proxies
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -367,7 +367,7 @@ export default function TestBrowser() {
                       <span className="text-gray-300">Stealth Mode:</span>
                       <Badge variant="outline" className="text-green-400 border-green-400">
                         <Shield className="w-3 h-3 mr-1" />
-                        Advanced
+                        Basic + CAPTCHA
                       </Badge>
                     </div>
                     
