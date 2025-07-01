@@ -58,6 +58,12 @@ export default function TestBrowser() {
   });
   const [twitterUsername, setTwitterUsername] = useState("");
   const [twitterPassword, setTwitterPassword] = useState("");
+  
+  // Test Script state
+  const [isTestScriptRunning, setIsTestScriptRunning] = useState(false);
+  const [automationStatus, setAutomationStatus] = useState<string>('');
+  const [showManualIntervention, setShowManualIntervention] = useState(false);
+  const [testScriptLiveViewUrl, setTestScriptLiveViewUrl] = useState<string>('');
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const sessionStartTime = useRef<number>(0);
@@ -133,6 +139,25 @@ export default function TestBrowser() {
           case 'session_closed':
             setLiveViewUrl(null);
             setStatus(prev => ({ ...prev, isConnected: false, status: 'disconnected' }));
+            break;
+          case 'automation_progress':
+            setAutomationStatus(data.message);
+            break;
+          case 'login_detected':
+            setShowManualIntervention(false);
+            setAutomationStatus('Login detected! Continuing automation...');
+            break;
+          case 'automation_complete':
+            setIsTestScriptRunning(false);
+            setShowManualIntervention(false);
+            setAutomationStatus('');
+            // Show success notification
+            break;
+          case 'automation_error':
+            setIsTestScriptRunning(false);
+            setShowManualIntervention(false);
+            setAutomationStatus('');
+            console.error('Automation failed:', data.error);
             break;
         }
       };
@@ -301,6 +326,34 @@ export default function TestBrowser() {
       console.error('Session termination failed:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTestScript = async () => {
+    try {
+      setIsTestScriptRunning(true);
+      setAutomationStatus('Starting automation...');
+      
+      const response = await apiRequest('/test-script', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      
+      if (response.success) {
+        if (response.status === 'manual_intervention_required') {
+          setShowManualIntervention(true);
+          setTestScriptLiveViewUrl(response.liveViewUrl);
+          setAutomationStatus(response.message);
+        } else if (response.status === 'continuing_automation') {
+          setAutomationStatus(response.message);
+        }
+      } else {
+        console.error(`Test script failed: ${response.message}`);
+        setIsTestScriptRunning(false);
+      }
+    } catch (error: any) {
+      console.error('Failed to start test script:', error);
+      setIsTestScriptRunning(false);
     }
   };
 
