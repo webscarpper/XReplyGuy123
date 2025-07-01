@@ -823,7 +823,9 @@ router.post("/test-script", async (req, res) => {
           devices: ["desktop"],
           locales: ["en-US"],
           operatingSystems: ["windows"]
-        }
+        },
+        // Disable automatic CAPTCHA solving - let user handle manually
+        solveCaptchas: false
       },
       proxies: true,
       timeout: 3600 // 1 hour in seconds
