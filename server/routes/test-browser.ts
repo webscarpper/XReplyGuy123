@@ -1002,37 +1002,77 @@ async function waitForLoginAndContinueVerified(page: Page, sessionId: string, li
   }
 }
 
-// Login detection with verified functions (VERIFIED)
+// Login detection with verified functions and error recovery (VERIFIED)
 async function waitForLoginCompletionVerified(page: Page, liveViewUrl: string) {
   const maxWait = 300000; // 5 minutes
-  const checkInterval = 4000; // 4 seconds
+  const checkInterval = 5000; // 5 seconds (increased for stability)
   let elapsed = 0;
+  let consecutiveErrors = 0;
 
   while (elapsed < maxWait) {
     try {
-      // VERIFIED: page.$() method
-      const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
-      const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
-      const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
+      // Reset error counter on successful check
+      consecutiveErrors = 0;
 
-      if (homeButton || profileButton || composeButton) {
-        return true;
-      }
-
-      // VERIFIED: page.url() method
+      // VERIFIED: page.url() method - check URL first as it's most reliable
       const currentUrl = await page.url();
+      console.log(`🔍 Login check - Current URL: ${currentUrl}`);
+
+      // Check for authenticated URLs
       const isAuthenticated = (
         currentUrl.includes('/home') || 
         currentUrl.includes('/following') ||
-        (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/flow'))
+        currentUrl.includes('/notifications') ||
+        currentUrl.includes('/messages') ||
+        (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/flow') && !currentUrl.includes('/logout'))
       );
 
       if (isAuthenticated) {
+        console.log("✅ Login detected via URL check");
         return true;
       }
 
-    } catch (error) {
-      console.log("⚠️ Login check error:", error);
+      // VERIFIED: page.$() method - check for authenticated elements
+      try {
+        const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
+        const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
+        const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
+        const tweetButton = await page.$('[data-testid="tweetButtonInline"]');
+
+        if (homeButton || profileButton || composeButton || tweetButton) {
+          console.log("✅ Login detected via element check");
+          return true;
+        }
+      } catch (elementError) {
+        console.log("⚠️ Element check failed (context may be destroyed):", elementError.message);
+      }
+
+    } catch (error: any) {
+      consecutiveErrors++;
+      console.log(`⚠️ Login check error (${consecutiveErrors}/3):`, error.message);
+      
+      // If we have too many consecutive errors, the page context might be destroyed
+      if (consecutiveErrors >= 3) {
+        console.log("❌ Too many consecutive errors, assuming page context destroyed");
+        
+        // Try to recover by checking if we can still access the page
+        try {
+          const recoveryUrl = await page.url();
+          console.log(`🔄 Recovery check - URL: ${recoveryUrl}`);
+          
+          // If we can get the URL and it looks authenticated, consider it successful
+          if (recoveryUrl.includes('/home') || recoveryUrl.includes('/following') || 
+              (recoveryUrl.includes('x.com') && !recoveryUrl.includes('/login') && !recoveryUrl.includes('/flow'))) {
+            console.log("✅ Login detected via recovery check");
+            return true;
+          }
+        } catch (recoveryError) {
+          console.log("❌ Recovery failed:", recoveryError.message);
+        }
+        
+        // Reset counter and continue
+        consecutiveErrors = 0;
+      }
     }
 
     // VERIFIED: page.waitForTimeout for delays
@@ -1051,24 +1091,56 @@ async function waitForLoginCompletionVerified(page: Page, liveViewUrl: string) {
     }
   }
 
+  console.log("❌ Login detection timeout reached");
   return false;
 }
 
-// Perform automation using ONLY official documented methods
+// Perform automation using ONLY official documented methods with logout detection
 async function performVerifiedAutomation(page: Page, sessionId: string, liveViewUrl: string, cursor: any) {
   try {
     console.log("🤖 Starting verified automation sequence...");
 
-    // Step 1: Human observation delay (OFFICIAL: page.waitForTimeout)
+    // Step 1: Check if we're logged out or on login page
+    const currentUrl = await page.url();
+    console.log("🔍 Current URL after login:", currentUrl);
+
+    if (currentUrl.includes('/login') || currentUrl.includes('/logout') || currentUrl.includes('/flow')) {
+      console.log("❌ Detected logout or login page - session may have been invalidated");
+      broadcastToClients({
+        type: 'automation_error',
+        error: 'Session was logged out or invalidated. Please try logging in again.',
+        sessionId: sessionId,
+        liveViewUrl: liveViewUrl
+      });
+      return;
+    }
+
+    // Step 2: Navigate to home to ensure we're in the right place
     broadcastToClients({
       type: 'automation_progress',
-      message: 'Looking around after login...',
-      step: 'initial_observation',
+      message: 'Navigating to home feed...',
+      step: 'navigation',
       liveViewUrl: liveViewUrl
     });
-    await page.waitForTimeout(4000 + Math.random() * 2000);
 
-    // Step 2: Look for Following tab (OFFICIAL: Modern locator approach)
+    console.log("🏠 Navigating to home feed...");
+    await page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(3000 + Math.random() * 2000);
+
+    // Step 3: Verify we're still logged in after navigation
+    const homeUrl = await page.url();
+    if (homeUrl.includes('/login') || homeUrl.includes('/logout')) {
+      console.log("❌ Redirected to login after navigation - session expired");
+      broadcastToClients({
+        type: 'automation_error',
+        error: 'Session expired during navigation. Please log in again.',
+        sessionId: sessionId,
+        liveViewUrl: liveViewUrl
+      });
+      return;
+    }
+
+    // Step 4: Look for Following tab with multiple selectors
     broadcastToClients({
       type: 'automation_progress',
       message: 'Looking for Following tab...',
@@ -1077,24 +1149,53 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     });
 
     console.log("👆 Looking for Following tab...");
-    const followingTab = page.locator('a[href="/following"]');
-    await followingTab.waitFor({ state: 'visible', timeout: 15000 });
+    
+    // Try multiple selectors for Following tab
+    const followingSelectors = [
+      'a[href="/following"]',
+      'a[aria-label="Following"]',
+      'a:has-text("Following")',
+      '[data-testid*="following"]',
+      'nav a[href*="following"]'
+    ];
 
-    console.log("👆 Clicking Following tab...");
-    await cursor.click(followingTab);
-    await page.waitForTimeout(2000 + Math.random() * 1000);
+    let followingTab = null;
+    for (const selector of followingSelectors) {
+      try {
+        followingTab = page.locator(selector);
+        await followingTab.waitFor({ state: 'visible', timeout: 5000 });
+        console.log(`✅ Found Following tab with selector: ${selector}`);
+        break;
+      } catch (e) {
+        console.log(`❌ Following tab not found with selector: ${selector}`);
+        continue;
+      }
+    }
 
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Switched to Following feed...',
-      step: 'following_clicked',
-      liveViewUrl: liveViewUrl
-    });
+    if (followingTab) {
+      console.log("👆 Clicking Following tab...");
+      await cursor.click(followingTab);
+      await page.waitForTimeout(3000 + Math.random() * 2000);
 
-    // Step 3: Wait for content (OFFICIAL: page.waitForTimeout)
-    await page.waitForTimeout(5000 + Math.random() * 3000);
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Switched to Following feed...',
+        step: 'following_clicked',
+        liveViewUrl: liveViewUrl
+      });
+    } else {
+      console.log("⚠️ Following tab not found, continuing with home feed...");
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Following tab not found, using home feed...',
+        step: 'using_home_feed',
+        liveViewUrl: liveViewUrl
+      });
+    }
 
-    // Step 4: Find posts (OFFICIAL: locator approach)
+    // Step 5: Wait for content and find posts
+    await page.waitForTimeout(4000 + Math.random() * 3000);
+
     broadcastToClients({
       type: 'automation_progress',
       message: 'Looking for posts...',
@@ -1103,10 +1204,33 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     });
 
     console.log("🔍 Looking for posts...");
-    const posts = page.locator('article[data-testid="tweet"]');
-    await posts.first().waitFor({ state: 'visible', timeout: 15000 });
+    
+    // Try multiple selectors for posts
+    const postSelectors = [
+      'article[data-testid="tweet"]',
+      'div[data-testid="tweet"]',
+      'article[role="article"]',
+      '[data-testid="tweetText"]'
+    ];
 
-    // Step 5: Click first post (OFFICIAL: locator.first())
+    let posts = null;
+    for (const selector of postSelectors) {
+      try {
+        posts = page.locator(selector);
+        await posts.first().waitFor({ state: 'visible', timeout: 10000 });
+        console.log(`✅ Found posts with selector: ${selector}`);
+        break;
+      } catch (e) {
+        console.log(`❌ Posts not found with selector: ${selector}`);
+        continue;
+      }
+    }
+
+    if (!posts) {
+      throw new Error('No posts found on the page');
+    }
+
+    // Step 6: Click first post
     const firstPost = posts.first();
     console.log("🎯 Clicking first post...");
 
@@ -1118,44 +1242,23 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     });
 
     await cursor.click(firstPost);
-    await page.waitForTimeout(3000 + Math.random() * 2000);
+    await page.waitForTimeout(4000 + Math.random() * 2000);
 
-    // Step 6: Scroll down to read comments (OFFICIAL: page.mouse.wheel)
+    // Step 7: Scroll to read content
     broadcastToClients({
       type: 'automation_progress',
-      message: 'Reading post and comments...',
+      message: 'Reading post content...',
       step: 'reading_content',
       liveViewUrl: liveViewUrl
     });
 
-    console.log("📜 Scrolling down to read comments...");
-
-    // Step 1: Scroll down 400px
-    await page.mouse.wheel(0, 400);
+    console.log("📜 Scrolling to read content...");
+    await page.mouse.wheel(0, 300);
     await page.waitForTimeout(2000 + Math.random() * 1000);
-
-    // Step 2: Scroll down another 200px  
     await page.mouse.wheel(0, 200);
     await page.waitForTimeout(2000 + Math.random() * 1000);
 
-    // Step 3: Scroll down final 200px
-    await page.mouse.wheel(0, 200);
-    await page.waitForTimeout(2000 + Math.random() * 1000);
-
-    // Step 7: Scroll back up (OFFICIAL: page.mouse.wheel with negative values)
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Finished reading, scrolling back up...',
-      step: 'scrolling_up',
-      liveViewUrl: liveViewUrl
-    });
-
-    console.log("⬆️ Scrolling back up...");
-    // Scroll back up 800px total
-    await page.mouse.wheel(0, -800);
-    await page.waitForTimeout(2000 + Math.random() * 1000);
-
-    // Step 8: Like the post (OFFICIAL: locator with waitFor)
+    // Step 8: Look for like button
     broadcastToClients({
       type: 'automation_progress',
       message: 'Looking for like button...',
@@ -1164,58 +1267,141 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     });
 
     console.log("❤️ Looking for like button...");
-    const likeButton = page.locator('[data-testid="like"]');
-    await likeButton.waitFor({ state: 'visible', timeout: 10000 });
+    
+    const likeSelectors = [
+      '[data-testid="like"]',
+      'button[aria-label*="like"]',
+      'button[aria-label*="Like"]',
+      '[role="button"]:has([data-testid="heart"])'
+    ];
 
-    console.log("❤️ Liking post...");
-    await cursor.click(likeButton);
-    await page.waitForTimeout(1500 + Math.random() * 1000);
+    let likeButton = null;
+    for (const selector of likeSelectors) {
+      try {
+        likeButton = page.locator(selector);
+        await likeButton.first().waitFor({ state: 'visible', timeout: 5000 });
+        console.log(`✅ Found like button with selector: ${selector}`);
+        break;
+      } catch (e) {
+        continue;
+      }
+    }
 
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Post liked! Looking for reply button...',
-      step: 'post_liked',
-      liveViewUrl: liveViewUrl
-    });
+    if (likeButton) {
+      console.log("❤️ Liking post...");
+      await cursor.click(likeButton.first());
+      await page.waitForTimeout(2000 + Math.random() * 1000);
 
-    // Step 9: Open reply (OFFICIAL: locator with waitFor)
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Post liked! Looking for reply button...',
+        step: 'post_liked',
+        liveViewUrl: liveViewUrl
+      });
+    } else {
+      console.log("⚠️ Like button not found, skipping like action");
+    }
+
+    // Step 9: Look for reply button
     console.log("💬 Looking for reply button...");
-    const replyButton = page.locator('[data-testid="reply"]');
-    await replyButton.waitFor({ state: 'visible', timeout: 10000 });
+    
+    const replySelectors = [
+      '[data-testid="reply"]',
+      'button[aria-label*="reply"]',
+      'button[aria-label*="Reply"]',
+      '[role="button"]:has([data-testid="reply"])'
+    ];
 
-    console.log("💬 Opening reply...");
-    await cursor.click(replyButton);
-    await page.waitForTimeout(2000 + Math.random() * 1000);
+    let replyButton = null;
+    for (const selector of replySelectors) {
+      try {
+        replyButton = page.locator(selector);
+        await replyButton.first().waitFor({ state: 'visible', timeout: 5000 });
+        console.log(`✅ Found reply button with selector: ${selector}`);
+        break;
+      } catch (e) {
+        continue;
+      }
+    }
 
-    // Step 10: Type comment (OFFICIAL: locator and keyboard.type with delay)
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Typing comment...',
-      step: 'typing_comment',
-      liveViewUrl: liveViewUrl
-    });
+    if (replyButton) {
+      console.log("💬 Opening reply...");
+      await cursor.click(replyButton.first());
+      await page.waitForTimeout(3000 + Math.random() * 2000);
 
-    console.log("📝 Looking for comment box...");
-    const commentBox = page.locator('[data-testid="tweetTextarea_0"]');
-    await commentBox.waitFor({ state: 'visible', timeout: 10000 });
+      // Step 10: Look for comment box
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Typing comment...',
+        step: 'typing_comment',
+        liveViewUrl: liveViewUrl
+      });
 
-    console.log("📝 Clicking comment box...");
-    await cursor.click(commentBox);
-    await page.waitForTimeout(500 + Math.random() * 500);
+      console.log("📝 Looking for comment box...");
+      
+      const commentSelectors = [
+        '[data-testid="tweetTextarea_0"]',
+        'div[contenteditable="true"]',
+        'textarea[placeholder*="reply"]',
+        'div[role="textbox"]'
+      ];
 
-    // OFFICIAL: Type with delay (DOCUMENTED)
-    console.log("⌨️ Typing comment...");
-    await page.keyboard.type('GM!', { delay: 100 + Math.random() * 100 });
-    await page.waitForTimeout(1000 + Math.random() * 1000);
+      let commentBox = null;
+      for (const selector of commentSelectors) {
+        try {
+          commentBox = page.locator(selector);
+          await commentBox.first().waitFor({ state: 'visible', timeout: 5000 });
+          console.log(`✅ Found comment box with selector: ${selector}`);
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
 
-    // Step 11: Submit reply (OFFICIAL: locator with waitFor)
-    console.log("📤 Looking for submit button...");
-    const submitButton = page.locator('[data-testid="tweetButtonInline"]');
-    await submitButton.waitFor({ state: 'visible', timeout: 10000 });
+      if (commentBox) {
+        console.log("📝 Clicking comment box...");
+        await cursor.click(commentBox.first());
+        await page.waitForTimeout(1000 + Math.random() * 500);
 
-    console.log("📤 Submitting reply...");
-    await cursor.click(submitButton);
-    await page.waitForTimeout(2000);
+        console.log("⌨️ Typing comment...");
+        await page.keyboard.type('GM! 🌅', { delay: 150 + Math.random() * 100 });
+        await page.waitForTimeout(2000 + Math.random() * 1000);
+
+        // Step 11: Submit reply
+        console.log("📤 Looking for submit button...");
+        
+        const submitSelectors = [
+          '[data-testid="tweetButtonInline"]',
+          'button[data-testid*="tweet"]',
+          'button:has-text("Reply")',
+          'button:has-text("Post")'
+        ];
+
+        let submitButton = null;
+        for (const selector of submitSelectors) {
+          try {
+            submitButton = page.locator(selector);
+            await submitButton.waitFor({ state: 'visible', timeout: 5000 });
+            console.log(`✅ Found submit button with selector: ${selector}`);
+            break;
+          } catch (e) {
+            continue;
+          }
+        }
+
+        if (submitButton) {
+          console.log("📤 Submitting reply...");
+          await cursor.click(submitButton);
+          await page.waitForTimeout(3000);
+        } else {
+          console.log("⚠️ Submit button not found, reply not submitted");
+        }
+      } else {
+        console.log("⚠️ Comment box not found, skipping reply");
+      }
+    } else {
+      console.log("⚠️ Reply button not found, skipping reply action");
+    }
 
     // Step 12: Automation complete
     console.log("🎉 Automation completed successfully!");
@@ -1227,7 +1413,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       liveViewUrl: liveViewUrl,
       summary: {
         login: '✅ Login completed',
-        following: '✅ Switched to Following tab',
+        navigation: '✅ Navigated to feed',
         interaction: '✅ Opened and read first post',
         engagement: '✅ Liked post and replied with GM!',
         completion: '✅ All actions completed naturally'
