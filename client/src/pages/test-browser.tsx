@@ -152,10 +152,18 @@ export default function TestBrowser() {
             break;
           case 'automation_progress':
             setAutomationStatus(data.message);
+            // Maintain live view URL if provided
+            if (data.liveViewUrl && !liveViewUrl) {
+              setLiveViewUrl(data.liveViewUrl);
+            }
             break;
           case 'login_detected':
             setShowManualIntervention(false);
             setAutomationStatus('Login detected! Continuing automation...');
+            // Maintain live view URL if provided
+            if (data.liveViewUrl && !liveViewUrl) {
+              setLiveViewUrl(data.liveViewUrl);
+            }
             break;
         }
       };

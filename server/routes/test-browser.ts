@@ -846,25 +846,35 @@ router.post("/test-script", async (req, res) => {
     const liveViewLinks = await browserbase.sessions.debug(session.id);
     const liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
 
-    // 4. Navigate to Twitter login
+    // 4. Immediately broadcast live view URL to all clients
+    broadcastToClients({
+      type: 'live_view_url',
+      url: liveViewUrl,
+      message: 'Live view ready - automation starting',
+      sessionId: session.id
+    });
+
+    // 5. Navigate to Twitter login
     console.log("🌐 Navigating to Twitter login...");
     await page.goto('https://x.com/i/flow/login', {
       waitUntil: 'networkidle',
       timeout: 30000
     });
 
-    // 5. Check if login is needed
+    // 6. Check if login is needed
     const needsLogin = await checkIfLoginNeeded(page);
 
     if (needsLogin) {
-      // 6. Request manual intervention
+      // 7. Request manual intervention
       console.log("🔐 Manual login required");
 
-      // Notify WebSocket clients
+      // Notify WebSocket clients with persistent live view
       broadcastToClients({
         type: 'automation_progress',
         message: 'Please complete login to continue automation',
-        step: 'manual_login'
+        step: 'manual_login',
+        liveViewUrl: liveViewUrl, // Include live view URL in all messages
+        sessionId: session.id
       });
 
       res.json({
@@ -875,8 +885,8 @@ router.post("/test-script", async (req, res) => {
         sessionId: session.id
       });
 
-      // 7. Wait for login completion in background
-      waitForLoginAndContinue(page, session.id);
+      // 8. Wait for login completion in background
+      waitForLoginAndContinue(page, session.id, liveViewUrl);
 
     } else {
       // Already logged in, continue directly
@@ -884,11 +894,12 @@ router.post("/test-script", async (req, res) => {
       res.json({
         success: true,
         status: 'continuing_automation',
+        liveViewUrl: liveViewUrl,
         message: 'Already logged in, continuing with automation'
       });
 
       // Continue with automation
-      performTestAutomation(page, session.id);
+      performTestAutomation(page, session.id, liveViewUrl);
     }
 
   } catch (error: any) {
@@ -915,30 +926,32 @@ async function checkIfLoginNeeded(page: Page) {
 }
 
 // Wait for login completion and continue automation
-async function waitForLoginAndContinue(page: Page, sessionId: string) {
+async function waitForLoginAndContinue(page: Page, sessionId: string, liveViewUrl: string) {
   try {
     console.log("⏳ Waiting for login completion...");
 
-    const loginDetected = await waitForLoginCompletion(page);
+    const loginDetected = await waitForLoginCompletion(page, liveViewUrl);
 
     if (loginDetected) {
       console.log("✅ Login detected! Continuing automation...");
 
-      // Notify clients
+      // Notify clients with persistent live view
       broadcastToClients({
         type: 'login_detected',
         message: 'Login successful! Continuing automation...',
-        sessionId: sessionId
+        sessionId: sessionId,
+        liveViewUrl: liveViewUrl
       });
 
       // Continue with automation
-      await performTestAutomation(page, sessionId);
+      await performTestAutomation(page, sessionId, liveViewUrl);
     } else {
       // Timeout
       broadcastToClients({
         type: 'automation_error',
         error: 'Login timeout - please try again',
-        sessionId: sessionId
+        sessionId: sessionId,
+        liveViewUrl: liveViewUrl
       });
     }
   } catch (error: any) {
@@ -946,13 +959,14 @@ async function waitForLoginAndContinue(page: Page, sessionId: string) {
     broadcastToClients({
       type: 'automation_error',
       error: error.message,
-      sessionId: sessionId
+      sessionId: sessionId,
+      liveViewUrl: liveViewUrl
     });
   }
 }
 
 // Login detection function
-async function waitForLoginCompletion(page: Page) {
+async function waitForLoginCompletion(page: Page, liveViewUrl: string) {
   const maxWait = 300000; // 5 minutes
   const checkInterval = 2000; // 2 seconds
   let elapsed = 0;
@@ -989,12 +1003,13 @@ async function waitForLoginCompletion(page: Page) {
     await new Promise(resolve => setTimeout(resolve, checkInterval));
     elapsed += checkInterval;
 
-    // Send periodic updates
+    // Send periodic updates with persistent live view
     if (elapsed % 30000 === 0) { // Every 30 seconds
       const remaining = Math.floor((maxWait - elapsed) / 1000);
       broadcastToClients({
         type: 'automation_progress',
-        message: `Waiting for login completion (${remaining}s remaining)...`
+        message: `Waiting for login completion (${remaining}s remaining)...`,
+        liveViewUrl: liveViewUrl
       });
     }
   }
@@ -1003,15 +1018,16 @@ async function waitForLoginCompletion(page: Page) {
 }
 
 // Perform the actual test automation
-async function performTestAutomation(page: Page, sessionId: string) {
+async function performTestAutomation(page: Page, sessionId: string, liveViewUrl: string) {
   try {
     console.log("🤖 Starting test automation sequence...");
 
-    // Update status
+    // Update status with persistent live view
     broadcastToClients({
       type: 'automation_progress',
       message: 'Navigating to home feed...',
-      step: 'navigation'
+      step: 'navigation',
+      liveViewUrl: liveViewUrl
     });
 
     // 1. Navigate to home feed
@@ -1022,32 +1038,41 @@ async function performTestAutomation(page: Page, sessionId: string) {
     broadcastToClients({
       type: 'automation_progress',
       message: 'Scrolling to find posts...',
-      step: 'scrolling'
+      step: 'scrolling',
+      liveViewUrl: liveViewUrl
     });
 
     await scrollToLoadPosts(page, 4);
 
-    // 3. Find and click 4th post
+    // 3. Find and click 4th post with better click handling
     const posts = await page.$$('[data-testid="tweet"]');
     if (posts.length >= 4) {
       broadcastToClients({
         type: 'automation_progress',
         message: 'Opening 4th post...',
-        step: 'post_interaction'
+        step: 'post_interaction',
+        liveViewUrl: liveViewUrl
       });
 
-      await posts[3].click();
+      // Wait for any loading overlays to disappear
+      await page.waitForTimeout(2000);
+      
+      // Use force click to bypass overlays
+      await posts[3].click({ force: true });
       await page.waitForTimeout(4000); // Wait 4 seconds as requested
 
       // 4. Try to open comment section
       const replyButton = await page.$('[data-testid="reply"]');
       if (replyButton) {
-        await replyButton.click();
+        // Wait for any modals/overlays to clear
+        await page.waitForTimeout(1000);
+        await replyButton.click({ force: true });
 
         broadcastToClients({
           type: 'automation_progress',
           message: 'Opening comment section...',
-          step: 'commenting'
+          step: 'commenting',
+          liveViewUrl: liveViewUrl
         });
 
         // Wait for comment box
@@ -1067,7 +1092,7 @@ async function performTestAutomation(page: Page, sessionId: string) {
           // Submit comment
           const submitButton = await page.$('[data-testid="tweetButtonInline"]');
           if (submitButton) {
-            await submitButton.click();
+            await submitButton.click({ force: true });
             console.log("✅ Comment posted successfully");
           }
         }
@@ -1088,6 +1113,7 @@ async function performTestAutomation(page: Page, sessionId: string) {
       type: 'automation_complete',
       message: 'Test automation completed successfully!',
       sessionId: sessionId,
+      liveViewUrl: liveViewUrl,
       summary: {
         login: '✅ Login completed',
         navigation: '✅ Navigated to feed',
@@ -1102,7 +1128,8 @@ async function performTestAutomation(page: Page, sessionId: string) {
     broadcastToClients({
       type: 'automation_error',
       error: error.message,
-      sessionId: sessionId
+      sessionId: sessionId,
+      liveViewUrl: liveViewUrl
     });
   }
 }
