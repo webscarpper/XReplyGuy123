@@ -123,7 +123,7 @@ async function cleanupSession() {
     currentContext = null;
   }
   
-  // Close browser if exists
+  // Close browser if exists (CORRECT: use browser.close(), NOT session.close())
   if (currentBrowser) {
     try {
       await currentBrowser.close();
@@ -133,7 +133,7 @@ async function cleanupSession() {
     currentBrowser = null;
   }
   
-  // Reset session
+  // Reset session - Session automatically terminates when browser connection closes
   currentSession = null;
   isConnected = false;
   
