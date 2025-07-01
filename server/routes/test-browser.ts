@@ -4,6 +4,7 @@ import WebSocket from "ws";
 import { Browserbase } from "@browserbasehq/sdk";
 import { chromium } from "playwright-core";
 import { Page, Browser, BrowserContext } from "playwright-core";
+import { createCursor } from "ghost-cursor-playwright";
 
 const router = Router();
 
@@ -809,10 +810,10 @@ async function performAutomatedLogin(username: string, password: string) {
   }
 }
 
-// POST /api/test-browser/test-script - Complete automation with handoff
+// POST /api/test-browser/test-script - Complete human-like automation
 router.post("/test-script", async (req, res) => {
   try {
-    console.log("🚀 Starting complete test script automation...");
+    console.log("🚀 Starting human-like Twitter automation...");
 
     // 1. Create new Browserbase session
     const session = await browserbase.sessions.create({
@@ -824,8 +825,7 @@ router.post("/test-script", async (req, res) => {
           locales: ["en-US"],
           operatingSystems: ["windows"]
         },
-        // Disable automatic CAPTCHA solving - let user handle manually
-        solveCaptchas: false
+        solveCaptchas: false // Let user handle CAPTCHAs manually
       },
       proxies: true,
       timeout: 3600 // 1 hour in seconds
@@ -838,71 +838,65 @@ router.post("/test-script", async (req, res) => {
     const defaultContext = browser.contexts()[0];
     const page = defaultContext.pages()[0];
 
+    // 3. Initialize ghost cursor for human-like movements
+    const cursor = createCursor(page);
+
     // Store session globally for cleanup
     testSession = session;
     testBrowser = browser;
     testContext = defaultContext;
     testPage = page;
 
-    // 3. Get live view URL
+    // 4. Get live view URL (persistent throughout automation)
     const liveViewLinks = await browserbase.sessions.debug(session.id);
     const liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
 
-    // 4. Immediately broadcast live view URL to all clients
+    // 5. Immediately broadcast live view URL
     broadcastToClients({
       type: 'live_view_url',
       url: liveViewUrl,
-      message: 'Live view ready - automation starting',
+      message: 'Live view ready - human-like automation starting',
       sessionId: session.id
     });
 
-    // 5. Navigate to Twitter login (always start fresh)
-    console.log("🌐 Navigating to fresh Twitter login page...");
+    // 6. Navigate to Twitter login with human-like behavior
+    console.log("🌐 Navigating to Twitter login like a human...");
     
-    // First clear any existing session
-    await page.context().clearCookies();
-
-    // Try to clear storage (handle security restrictions gracefully)
+    // Clear any existing session safely
     try {
+      await page.context().clearCookies();
       await page.evaluate(() => {
         try {
           localStorage.clear();
-        } catch (e) {
-          console.log('localStorage clear blocked by security policy');
-        }
-        try {
           sessionStorage.clear();
         } catch (e) {
-          console.log('sessionStorage clear blocked by security policy');
+          console.log('Storage clearing blocked by security policy');
         }
       });
-      console.log("✅ Storage cleared successfully");
     } catch (error) {
-      console.log("⚠️ Storage clearing blocked by security policy, continuing anyway...");
+      console.log("⚠️ Storage clearing blocked, continuing...");
     }
     
     // Navigate to login page
     await page.goto('https://x.com/i/flow/login', {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: 30000
     });
     
-    // Wait a bit for page to fully render
-    await page.waitForTimeout(3000);
+    // Human-like page observation delay
+    await humanDelay('observing', 3000, 2000);
 
-    // 6. Check if login is needed
+    // 7. Check if login is needed
     const needsLogin = await checkIfLoginNeeded(page);
 
     if (needsLogin) {
-      // 7. Request manual intervention
       console.log("🔐 Manual login required");
 
-      // Notify WebSocket clients with persistent live view
       broadcastToClients({
         type: 'automation_progress',
         message: 'Please complete login to continue automation',
         step: 'manual_login',
-        liveViewUrl: liveViewUrl, // Include live view URL in all messages
+        liveViewUrl: liveViewUrl,
         sessionId: session.id
       });
 
@@ -914,21 +908,20 @@ router.post("/test-script", async (req, res) => {
         sessionId: session.id
       });
 
-      // 8. Wait for login completion in background
-      waitForLoginAndContinue(page, session.id, liveViewUrl);
+      // Wait for login completion in background
+      waitForLoginAndContinueHuman(page, session.id, liveViewUrl, cursor);
 
     } else {
-      // Already logged in, continue directly
       console.log("✅ Already logged in, continuing automation...");
       res.json({
         success: true,
         status: 'continuing_automation',
         liveViewUrl: liveViewUrl,
-        message: 'Already logged in, continuing with automation'
+        message: 'Already logged in, continuing with human-like automation'
       });
 
       // Continue with automation
-      performTestAutomation(page, session.id, liveViewUrl);
+      performHumanLikeAutomation(page, session.id, liveViewUrl, cursor);
     }
 
   } catch (error: any) {
@@ -939,6 +932,13 @@ router.post("/test-script", async (req, res) => {
     });
   }
 });
+
+// Human-like delay patterns with natural variation
+async function humanDelay(action: string, baseMs: number, variationMs: number = 1000) {
+  const delay = baseMs + (Math.random() * variationMs);
+  console.log(`🧠 Human ${action} delay: ${Math.round(delay)}ms`);
+  await new Promise(resolve => setTimeout(resolve, delay));
+}
 
 // Check if login is needed
 async function checkIfLoginNeeded(page: Page) {
@@ -1003,28 +1003,29 @@ async function checkIfLoginNeeded(page: Page) {
   }
 }
 
-// Wait for login completion and continue automation
-async function waitForLoginAndContinue(page: Page, sessionId: string, liveViewUrl: string) {
+// Wait for login completion with human-like patience
+async function waitForLoginAndContinueHuman(page: Page, sessionId: string, liveViewUrl: string, cursor: any) {
   try {
-    console.log("⏳ Waiting for login completion...");
+    console.log("⏳ Waiting for human login completion...");
 
-    const loginDetected = await waitForLoginCompletion(page, liveViewUrl);
+    const loginDetected = await waitForLoginCompletionHuman(page, liveViewUrl);
 
     if (loginDetected) {
-      console.log("✅ Login detected! Continuing automation...");
+      console.log("✅ Login detected! Starting human-like automation...");
 
-      // Notify clients with persistent live view
       broadcastToClients({
         type: 'login_detected',
-        message: 'Login successful! Continuing automation...',
+        message: 'Login successful! Starting human-like automation...',
         sessionId: sessionId,
         liveViewUrl: liveViewUrl
       });
 
-      // Continue with automation
-      await performTestAutomation(page, sessionId, liveViewUrl);
+      // Human thinking delay before starting automation
+      await humanDelay('thinking', 3000, 2000);
+
+      // Continue with human-like automation
+      await performHumanLikeAutomation(page, sessionId, liveViewUrl, cursor);
     } else {
-      // Timeout
       broadcastToClients({
         type: 'automation_error',
         error: 'Login timeout - please try again',
@@ -1043,224 +1044,244 @@ async function waitForLoginAndContinue(page: Page, sessionId: string, liveViewUr
   }
 }
 
-// Login detection function
-async function waitForLoginCompletion(page: Page, liveViewUrl: string) {
+// Enhanced login detection with human-like checking
+async function waitForLoginCompletionHuman(page: Page, liveViewUrl: string) {
   const maxWait = 300000; // 5 minutes
-  const checkInterval = 3000; // 3 seconds
+  const checkInterval = 4000; // 4 seconds (more human-like)
   let elapsed = 0;
 
-  console.log("⏳ Starting login completion detection...");
+  console.log("⏳ Starting human-like login detection...");
 
   while (elapsed < maxWait) {
     try {
-      console.log(`🔍 Login check ${Math.floor(elapsed/1000)}s - Checking authentication status...`);
+      // Human-like checking pattern
+      console.log(`🔍 Checking authentication (${Math.floor(elapsed/1000)}s)...`);
       
-      // Method 1: Check for authenticated UI elements (most reliable)
+      // Check for authenticated UI elements
       const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
       const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
       const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
-      const sideNavHome = await page.$('[data-testid="SideNav_AccountSwitcher_Button"]');
-
-      if (homeButton || profileButton || composeButton || sideNavHome) {
-        console.log("✅ Authenticated UI elements found!");
+      
+      if (homeButton || profileButton || composeButton) {
+        console.log("✅ Authentication confirmed!");
         return true;
       }
 
-      // Method 2: Check URL patterns (secondary check)
+      // Check URL patterns
       const currentUrl = await page.url();
-      const isAuthenticatedUrl = (
+      const isAuthenticated = (
         currentUrl.includes('/home') || 
         currentUrl.includes('/following') ||
-        currentUrl.includes('/notifications') ||
-        (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/flow') && !currentUrl.includes('/signup'))
+        (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/flow'))
       );
 
-      if (isAuthenticatedUrl) {
-        console.log("✅ Authenticated URL pattern detected!");
+      if (isAuthenticated) {
+        console.log("✅ Authenticated URL detected!");
         return true;
       }
-
-      // Method 3: Check for tweet composer (strong indicator)
-      const tweetComposer = await page.$('[data-testid="tweetTextarea_0"]');
-      const primaryColumn = await page.$('[data-testid="primaryColumn"]');
-      
-      if (tweetComposer && primaryColumn) {
-        console.log("✅ Tweet composer and main feed found!");
-        return true;
-      }
-
-      // Method 4: Check for absence of login elements (negative check)
-      const loginModal = await page.$('[aria-labelledby*="modal-header"]');
-      const signInText = await page.$('text="Sign in to X"');
-      const loginButton = await page.$('[data-testid="LoginForm_Login_Button"]');
-      
-      const hasLoginElements = loginModal || signInText || loginButton;
-      
-      if (!hasLoginElements && primaryColumn) {
-        console.log("✅ No login elements found and main content present!");
-        return true;
-      }
-
-      console.log(`🔍 Login status: Auth elements=${!!(homeButton || profileButton || composeButton)}, URL=${isAuthenticatedUrl}, Composer=${!!tweetComposer}, No login=${!hasLoginElements}`);
 
     } catch (error) {
       console.log("⚠️ Login check error:", error);
     }
 
-    // Wait before next check
+    // Human-like waiting
     await new Promise(resolve => setTimeout(resolve, checkInterval));
     elapsed += checkInterval;
 
-    // Send periodic updates with persistent live view
-    if (elapsed % 30000 === 0) { // Every 30 seconds
+    // Periodic updates
+    if (elapsed % 30000 === 0) {
       const remaining = Math.floor((maxWait - elapsed) / 1000);
       broadcastToClients({
         type: 'automation_progress',
-        message: `Still waiting for login completion (${remaining}s remaining)...`,
+        message: `Waiting for login completion (${remaining}s remaining)...`,
         step: 'login_wait',
         liveViewUrl: liveViewUrl
       });
     }
   }
 
-  console.log("❌ Login detection timeout reached");
-  return false; // Timeout
+  return false;
 }
 
-// Perform the actual test automation
-async function performTestAutomation(page: Page, sessionId: string, liveViewUrl: string) {
+// Perform complete human-like Twitter automation
+async function performHumanLikeAutomation(page: Page, sessionId: string, liveViewUrl: string, cursor: any) {
   try {
-    console.log("🤖 Starting test automation sequence...");
+    console.log("🤖 Starting complete human-like automation sequence...");
 
-    // Initial delay to let user observe the automation starting
+    // Step 1: Human observation delay (user would look around after login)
     broadcastToClients({
       type: 'automation_progress',
-      message: 'Automation will start in 10 seconds... (giving time to observe)',
-      step: 'initialization',
+      message: 'Looking around after login like a human...',
+      step: 'initial_observation',
       liveViewUrl: liveViewUrl
     });
-    await page.waitForTimeout(10000); // 10 second delay for user to see
+    await humanDelay('observing', 4000, 2000);
 
-    // Update status with persistent live view
+    // Step 2: Navigate to Following tab (human-like)
     broadcastToClients({
       type: 'automation_progress',
-      message: 'Navigating to home feed...',
-      step: 'navigation',
+      message: 'Looking for Following tab...',
+      step: 'finding_following',
       liveViewUrl: liveViewUrl
     });
 
-    // 1. Navigate to home feed with proper loading
-    await page.goto('https://x.com/home', { waitUntil: 'networkidle', timeout: 60000 });
-    console.log("📍 Navigated to home feed, waiting for full page load...");
-    
-    // Wait for page to be properly loaded - check for key elements
-    await waitForPageToLoad(page, liveViewUrl);
+    // Find and click Following tab with human-like behavior
+    const followingTab = await page.$('a[href="/following"], [role="tab"]:has-text("Following")');
+    if (followingTab) {
+      console.log("👆 Clicking Following tab with human-like movement...");
+      
+      // Human-like mouse movement and click
+      await cursor.click(followingTab);
+      await humanDelay('clicking', 1500, 1000);
+      
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Switched to Following feed - waiting for content...',
+        step: 'following_clicked',
+        liveViewUrl: liveViewUrl
+      });
+    } else {
+      console.log("⚠️ Following tab not found, continuing with current feed...");
+    }
 
-    // 2. Human-like delay before looking for posts
+    // Step 3: Wait for feed to load with human patience
+    await humanDelay('waiting_for_content', 5000, 3000);
+
+    // Step 4: Find first post with human-like scanning
     broadcastToClients({
       type: 'automation_progress',
-      message: 'Page loaded! Looking for posts... (waiting 15 seconds to observe)',
-      step: 'loading',
+      message: 'Scanning feed for posts like a human...',
+      step: 'scanning_posts',
       liveViewUrl: liveViewUrl
     });
-    await page.waitForTimeout(15000); // 15 second delay
 
-    // 3. Find posts with better loading detection
-    const posts = await findPostsWithBetterDetection(page, liveViewUrl);
+    const posts = await findPostsHumanLike(page, liveViewUrl);
     
     if (posts.length === 0) {
-      throw new Error('No posts found on the page. The page may not have loaded correctly or Twitter structure changed.');
+      throw new Error('No posts found in the feed');
     }
 
-    console.log(`✅ Found ${posts.length} posts, proceeding with automation`);
+    // Step 5: Select first post and interact
+    const firstPost = posts[0];
+    console.log("🎯 Found first post, preparing human-like interaction...");
 
-    // 4. Human-like delay before interaction
     broadcastToClients({
       type: 'automation_progress',
-      message: `Found ${posts.length} posts. Will interact with a post in 10 seconds...`,
-      step: 'preparing',
+      message: 'Found first post - clicking to open...',
+      step: 'opening_post',
       liveViewUrl: liveViewUrl
     });
-    await page.waitForTimeout(10000); // 10 second delay
 
-    // 5. Select and interact with a post
-    const targetPostIndex = Math.min(3, posts.length - 1);
-    const targetPost = posts[targetPostIndex];
+    // Human-like post clicking
+    await cursor.click(firstPost);
+    await humanDelay('post_opening', 3000, 2000);
 
-    if (targetPost) {
-      broadcastToClients({
-        type: 'automation_progress',
-        message: `Scrolling to post ${targetPostIndex + 1}...`,
-        step: 'scrolling',
-        liveViewUrl: liveViewUrl
-      });
+    // Step 6: Human-like post reading and scrolling
+    broadcastToClients({
+      type: 'automation_progress',
+      message: 'Reading post content like a human...',
+      step: 'reading_post',
+      liveViewUrl: liveViewUrl
+    });
 
-      // Scroll to post slowly like a human
-      await targetPost.scrollIntoViewIfNeeded();
-      await page.waitForTimeout(3000); // Wait for scroll animation
-      
-      broadcastToClients({
-        type: 'automation_progress',
-        message: `Clicking on post ${targetPostIndex + 1}...`,
-        step: 'clicking',
-        liveViewUrl: liveViewUrl
-      });
+    // Scroll down to read comments (human-like)
+    await humanScrollDown(page, 400);
+    await humanDelay('reading_comments', 4000, 2000);
 
-      // Click with human-like behavior
-      await clickWithHumanBehavior(page, targetPost);
-      await page.waitForTimeout(8000); // Wait for post to open
-
-      // 6. Interact with the opened post
-      await interactWithPostSlowly(page, liveViewUrl);
-
-      // 7. Human-like delay before going back
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'Going back to feed...',
-        step: 'returning',
-        liveViewUrl: liveViewUrl
-      });
-      await page.waitForTimeout(5000);
-      
-      await page.goBack();
-      await page.waitForTimeout(5000); // Wait for navigation
-
-      // 8. Final human-like scrolling with mouse wheel
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'Scrolling through feed like a human...',
-        step: 'final_scroll',
-        liveViewUrl: liveViewUrl
-      });
-      
-      await humanLikeScroll(page, 400);
-      await page.waitForTimeout(2000 + Math.random() * 1000);
-      await humanLikeScroll(page, 400);
-      await page.waitForTimeout(2000 + Math.random() * 1000);
+    // Scroll through first 5 comments area
+    for (let i = 0; i < 3; i++) {
+      await humanScrollDown(page, 200);
+      await humanDelay('reading', 2000, 1000);
     }
 
-    // 9. Final delay before completion
-    await page.waitForTimeout(5000);
+    // Step 7: Scroll back up like human finished reading
+    broadcastToClients({
+      type: 'automation_progress',
+      message: 'Finished reading comments, scrolling back up...',
+      step: 'scrolling_up',
+      liveViewUrl: liveViewUrl
+    });
 
-    // 10. Automation complete
-    console.log("🎉 Test automation completed successfully!");
+    await humanScrollUp(page, 800);
+    await humanDelay('deciding', 2000, 1000);
+
+    // Step 8: Like the post with human-like behavior
+    broadcastToClients({
+      type: 'automation_progress',
+      message: 'Looking for like button...',
+      step: 'finding_like',
+      liveViewUrl: liveViewUrl
+    });
+
+    const likeButton = await page.$('[data-testid="like"]');
+    if (likeButton) {
+      console.log("❤️ Liking post with human-like movement...");
+      await cursor.click(likeButton);
+      await humanDelay('liking', 1500, 1000);
+      
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Post liked! Looking for reply button...',
+        step: 'post_liked',
+        liveViewUrl: liveViewUrl
+      });
+    }
+
+    // Step 9: Open reply with human-like behavior
+    const replyButton = await page.$('[data-testid="reply"]');
+    if (replyButton) {
+      console.log("💬 Opening reply with human-like movement...");
+      await cursor.click(replyButton);
+      await humanDelay('reply_opening', 2000, 1000);
+
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'Reply dialog opened - typing GM!...',
+        step: 'typing_reply',
+        liveViewUrl: liveViewUrl
+      });
+
+      // Step 10: Type "GM!" with human-like typing
+      await typeHumanLike(page, "GM!", liveViewUrl);
+
+      // Step 11: Submit reply with human-like behavior
+      const submitButton = await page.$('[data-testid="tweetButtonInline"]');
+      if (submitButton) {
+        await humanDelay('reviewing_comment', 2000, 1000); // Human reviews before posting
+        
+        broadcastToClients({
+          type: 'automation_progress',
+          message: 'Posting reply...',
+          step: 'posting_reply',
+          liveViewUrl: liveViewUrl
+        });
+
+        await cursor.click(submitButton);
+        await humanDelay('posting', 2000, 1000);
+      }
+    }
+
+    // Step 12: Human-like completion
+    await humanDelay('finishing', 3000, 2000);
+
+    console.log("🎉 Human-like automation completed successfully!");
 
     broadcastToClients({
       type: 'automation_complete',
-      message: 'Test automation completed successfully!',
+      message: 'Human-like automation completed successfully!',
       sessionId: sessionId,
       liveViewUrl: liveViewUrl,
       summary: {
-        login: '✅ Login completed',
-        navigation: '✅ Navigated to feed',
-        interaction: `✅ Interacted with post ${targetPostIndex + 1}`,
-        commenting: '✅ Posted comment',
-        completion: '✅ Returned to feed'
+        login: '✅ Manual login completed',
+        following: '✅ Switched to Following feed',
+        interaction: '✅ Opened and read first post',
+        engagement: '✅ Liked post and replied with GM!',
+        completion: '✅ All actions completed naturally'
       }
     });
 
   } catch (error: any) {
-    console.error("❌ Automation error:", error);
+    console.error("❌ Human-like automation error:", error);
     broadcastToClients({
       type: 'automation_error',
       error: error.message,
@@ -1375,6 +1396,97 @@ async function clickWithHumanBehavior(page: Page, element: any) {
     // Calculate target position (slightly random within element)
     const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
     const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
+
+
+// Find posts with human-like scanning behavior
+async function findPostsHumanLike(page: Page, liveViewUrl: string) {
+  console.log("👀 Scanning for posts with human-like behavior...");
+  
+  // Human-like scanning delay
+  await humanDelay('scanning', 2000, 1000);
+  
+  const selectors = [
+    'article[data-testid="tweet"]',
+    '[data-testid="tweet"]',
+    'article[role="article"]'
+  ];
+
+  for (const selector of selectors) {
+    try {
+      await page.waitForSelector(selector, { timeout: 8000 });
+      const posts = await page.$$(selector);
+      if (posts.length > 0) {
+        console.log(`✅ Found ${posts.length} posts with human-like detection`);
+        return posts;
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+
+  return [];
+}
+
+// Human-like scrolling down
+async function humanScrollDown(page: Page, pixels: number) {
+  const scrollSteps = 3 + Math.floor(Math.random() * 3); // 3-5 steps
+  const pixelsPerStep = pixels / scrollSteps;
+  
+  for (let i = 0; i < scrollSteps; i++) {
+    await page.mouse.wheel(0, pixelsPerStep);
+    await humanDelay('scrolling', 150, 100); // 150-250ms between scrolls
+  }
+  
+  console.log(`📜 Human-like scroll down: ${pixels}px in ${scrollSteps} steps`);
+}
+
+// Human-like scrolling up
+async function humanScrollUp(page: Page, pixels: number) {
+  const scrollSteps = 3 + Math.floor(Math.random() * 3);
+  const pixelsPerStep = pixels / scrollSteps;
+  
+  for (let i = 0; i < scrollSteps; i++) {
+    await page.mouse.wheel(0, -pixelsPerStep);
+    await humanDelay('scrolling', 150, 100);
+  }
+  
+  console.log(`📜 Human-like scroll up: ${pixels}px in ${scrollSteps} steps`);
+}
+
+// Human-like typing with realistic patterns
+async function typeHumanLike(page: Page, text: string, liveViewUrl: string) {
+  const commentBox = await page.$('[data-testid="tweetTextarea_0"]');
+  if (!commentBox) return;
+
+  // Click on comment box first
+  await commentBox.click();
+  await humanDelay('focusing', 500, 300);
+
+  // Type each character with human-like variability
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    
+    // Simulate occasional hesitation (10% chance)
+    if (Math.random() < 0.1) {
+      await humanDelay('thinking', 300, 200);
+    }
+    
+    await page.keyboard.type(char);
+    
+    // Variable typing speed
+    let delay = 120 + Math.random() * 180; // 120-300ms base
+    
+    if (char === ' ') {
+      delay += 50; // Longer pause after words
+    } else if (char === '!') {
+      delay += 100; // Pause after exclamation
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+  
+  console.log(`⌨️ Typed "${text}" with human-like behavior`);
+}
 
     console.log(`Moving mouse from current position to (${Math.round(targetX)}, ${Math.round(targetY)})`);
 
