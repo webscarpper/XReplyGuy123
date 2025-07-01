@@ -1115,18 +1115,18 @@ async function performTestAutomation(page: Page, sessionId: string, liveViewUrl:
       await page.goBack();
       await page.waitForTimeout(5000); // Wait for navigation
 
-      // 8. Final human-like scrolling
+      // 8. Final human-like scrolling with mouse wheel
       broadcastToClients({
         type: 'automation_progress',
-        message: 'Scrolling through feed...',
+        message: 'Scrolling through feed like a human...',
         step: 'final_scroll',
         liveViewUrl: liveViewUrl
       });
       
-      await page.evaluate(() => window.scrollBy(0, 400));
-      await page.waitForTimeout(2000);
-      await page.evaluate(() => window.scrollBy(0, 400));
-      await page.waitForTimeout(2000);
+      await humanLikeScroll(page, 400);
+      await page.waitForTimeout(2000 + Math.random() * 1000);
+      await humanLikeScroll(page, 400);
+      await page.waitForTimeout(2000 + Math.random() * 1000);
     }
 
     // 9. Final delay before completion
@@ -1250,50 +1250,104 @@ async function findPostsWithBetterDetection(page: Page, liveViewUrl: string) {
   return [];
 }
 
-// Human-like clicking behavior
+// Human-like clicking behavior with visible mouse movements
 async function clickWithHumanBehavior(page: Page, element: any) {
   try {
-    // Move mouse to element first (like a human would)
+    // Get current mouse position
+    const currentPos = await page.evaluate(() => ({ x: 0, y: 0 })); // Start from 0,0 if no previous position
+    
+    // Get element bounding box
     const box = await element.boundingBox();
-    if (box) {
-      // Move to a slightly random position within the element
-      const x = box.x + box.width * (0.3 + Math.random() * 0.4);
-      const y = box.y + box.height * (0.3 + Math.random() * 0.4);
-      
-      await page.mouse.move(x, y);
-      await page.waitForTimeout(500 + Math.random() * 1000); // Random delay 0.5-1.5s
+    if (!box) {
+      throw new Error("Element not visible for clicking");
     }
+
+    // Calculate target position (slightly random within element)
+    const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
+    const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
+
+    console.log(`Moving mouse from current position to (${Math.round(targetX)}, ${Math.round(targetY)})`);
+
+    // Move mouse in human-like path with multiple steps
+    await moveMouseLikeHuman(page, currentPos.x, currentPos.y, targetX, targetY);
+
+    // Human-like pause before clicking (like thinking/aiming)
+    await page.waitForTimeout(300 + Math.random() * 700); // 0.3-1s pause
 
     // Wait for any loading overlays to disappear
     await waitForLoadingToComplete(page);
 
-    // Click with retry logic
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await element.click({ timeout: 15000 });
-        console.log("✅ Successfully clicked element");
-        return;
-      } catch (error: any) {
-        console.log(`Click attempt ${attempt} failed:`, error.message);
-        
-        if (attempt === 3) {
-          // Last attempt - try force click
-          try {
-            await element.click({ force: true, timeout: 10000 });
-            console.log("✅ Successfully force-clicked element");
-            return;
-          } catch (forceError) {
-            throw new Error(`Failed to click element after 3 attempts: ${error.message}`);
-          }
-        }
-        
-        // Wait before retry
-        await page.waitForTimeout(2000);
-      }
-    }
+    // Perform the actual click using mouse.click() to ensure visible clicking
+    console.log("Performing mouse click at target position");
+    await page.mouse.click(targetX, targetY, {
+      delay: 50 + Math.random() * 100, // Click hold duration like human
+      button: 'left'
+    });
+
+    console.log("✅ Successfully clicked with human-like mouse movement");
+    
+    // Small delay after click like human reaction time
+    await page.waitForTimeout(200 + Math.random() * 300);
+
   } catch (error: any) {
-    throw new Error(`Click failed: ${error.message}`);
+    console.error("Human-like click failed:", error.message);
+    
+    // Fallback to element click if mouse click fails
+    try {
+      console.log("Trying fallback element click...");
+      await element.click({ timeout: 10000 });
+      console.log("✅ Fallback click successful");
+    } catch (fallbackError: any) {
+      throw new Error(`Both human-like and fallback clicks failed: ${error.message}`);
+    }
   }
+}
+
+// Move mouse in human-like curved path
+async function moveMouseLikeHuman(page: Page, startX: number, startY: number, endX: number, endY: number) {
+  const steps = 8 + Math.floor(Math.random() * 5); // 8-12 steps for smooth movement
+  const stepDelay = 20 + Math.random() * 30; // 20-50ms between steps
+
+  for (let i = 0; i <= steps; i++) {
+    const progress = i / steps;
+    
+    // Use easing function for natural acceleration/deceleration
+    const easedProgress = easeInOutCubic(progress);
+    
+    // Add slight curve/wobble to path (like human hand tremor)
+    const wobbleX = Math.sin(progress * Math.PI * 2) * (5 + Math.random() * 10);
+    const wobbleY = Math.cos(progress * Math.PI * 1.5) * (3 + Math.random() * 8);
+    
+    const currentX = startX + (endX - startX) * easedProgress + wobbleX;
+    const currentY = startY + (endY - startY) * easedProgress + wobbleY;
+    
+    await page.mouse.move(currentX, currentY);
+    
+    if (i < steps) {
+      await page.waitForTimeout(stepDelay);
+    }
+  }
+}
+
+// Easing function for natural mouse movement
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+// Human-like scrolling using mouse wheel
+async function humanLikeScroll(page: Page, pixels: number) {
+  const scrollSteps = 3 + Math.floor(Math.random() * 4); // 3-6 scroll steps
+  const pixelsPerStep = pixels / scrollSteps;
+  
+  for (let i = 0; i < scrollSteps; i++) {
+    // Use mouse wheel for visible scrolling
+    await page.mouse.wheel(0, pixelsPerStep);
+    
+    // Human-like delay between scroll steps
+    await page.waitForTimeout(100 + Math.random() * 200); // 100-300ms between scrolls
+  }
+  
+  console.log(`Scrolled ${pixels} pixels in ${scrollSteps} human-like steps`);
 }
 
 // Wait for loading overlays to disappear
@@ -1406,7 +1460,7 @@ async function interactWithPostSlowly(page: Page, liveViewUrl: string) {
   }
 }
 
-// Human-like typing behavior
+// Human-like typing behavior with visible cursor and natural typing patterns
 async function typeCommentSlowly(page: Page, liveViewUrl: string) {
   const commentSelectors = [
     '[data-testid="tweetTextarea_0"]',
@@ -1427,28 +1481,63 @@ async function typeCommentSlowly(page: Page, liveViewUrl: string) {
     try {
       const commentBox = await page.$(commentSelector);
       if (commentBox) {
-        // Click in the comment box
-        await commentBox.click();
-        await page.waitForTimeout(1000);
+        // Move mouse to comment box and click like human
+        await clickWithHumanBehavior(page, commentBox);
+        await page.waitForTimeout(500 + Math.random() * 500);
 
-        // Type slowly like a human
-        for (const char of randomComment) {
+        // Clear any existing text first
+        await page.keyboard.press('Control+A');
+        await page.waitForTimeout(100);
+
+        // Type with human-like variability and mistakes
+        let typedText = '';
+        for (let i = 0; i < randomComment.length; i++) {
+          const char = randomComment[i];
+          
+          // Simulate occasional typos (5% chance)
+          if (Math.random() < 0.05 && char.match(/[a-zA-Z]/)) {
+            // Type wrong character
+            const wrongChar = String.fromCharCode(char.charCodeAt(0) + (Math.random() > 0.5 ? 1 : -1));
+            await page.keyboard.type(wrongChar);
+            await page.waitForTimeout(50 + Math.random() * 100);
+            
+            // Realize mistake and backspace
+            await page.waitForTimeout(200 + Math.random() * 300);
+            await page.keyboard.press('Backspace');
+            await page.waitForTimeout(50 + Math.random() * 100);
+          }
+          
+          // Type the correct character
           await page.keyboard.type(char);
-          await page.waitForTimeout(50 + Math.random() * 150); // Random typing speed
+          typedText += char;
+          
+          // Variable typing speed - faster for common words, slower for complex words
+          let delay = 80 + Math.random() * 120; // Base: 80-200ms
+          
+          if (char === ' ') {
+            delay += 50 + Math.random() * 100; // Longer pause after words
+          } else if (char.match(/[.!?]/)) {
+            delay += 200 + Math.random() * 300; // Longer pause after sentences
+          } else if (char.match(/[🤔👍💯❤️]/)) {
+            delay += 150 + Math.random() * 200; // Longer pause for emojis
+          }
+          
+          await page.waitForTimeout(delay);
         }
 
-        console.log("✅ Typed comment:", randomComment);
+        console.log("✅ Typed comment with human-like behavior:", randomComment);
         
         broadcastToClients({
           type: 'automation_progress',
-          message: `Comment typed: "${randomComment}" - Looking for post button...`,
+          message: `Comment typed naturally: "${randomComment}" - Looking for post button...`,
           step: 'posting',
           liveViewUrl: liveViewUrl
         });
 
-        await page.waitForTimeout(2000);
+        // Human-like pause before submitting (reading over the comment)
+        await page.waitForTimeout(1500 + Math.random() * 2000);
 
-        // Try to submit the comment
+        // Try to submit the comment with human-like clicking
         const submitSelectors = [
           '[data-testid="tweetButtonInline"]',
           'button[data-testid="tweetButton"]',
@@ -1460,13 +1549,13 @@ async function typeCommentSlowly(page: Page, liveViewUrl: string) {
           try {
             const submitButton = await page.$(submitSelector);
             if (submitButton) {
-              await page.waitForTimeout(1000 + Math.random() * 2000);
-              await submitButton.click();
-              console.log("✅ Posted comment");
+              await page.waitForTimeout(500 + Math.random() * 1000);
+              await clickWithHumanBehavior(page, submitButton);
+              console.log("✅ Posted comment with human-like click");
               
               broadcastToClients({
                 type: 'automation_progress',
-                message: 'Comment posted successfully!',
+                message: 'Comment posted successfully with natural interaction!',
                 step: 'posted',
                 liveViewUrl: liveViewUrl
               });
