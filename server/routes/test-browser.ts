@@ -55,26 +55,26 @@ export function handleBrowserWebSocket(ws: WebSocket) {
   ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message.toString());
-      
+
       if (data.type === 'browser_control' && currentPage) {
         const { action } = data;
-        
+
         switch (action.type) {
           case 'click':
             await currentPage.mouse.click(action.x, action.y);
             console.log(`Browser click at ${action.x}, ${action.y}`);
             break;
-            
+
           case 'type':
             await currentPage.keyboard.type(action.text);
             console.log(`Browser type: ${action.text}`);
             break;
-            
+
           case 'scroll':
             await currentPage.mouse.wheel(0, action.deltaY);
             console.log(`Browser scroll: ${action.deltaY}`);
             break;
-            
+
           case 'key':
             await currentPage.keyboard.press(action.key);
             console.log(`Browser key: ${action.key}`);
@@ -108,16 +108,16 @@ function broadcastToClients(message: any) {
 // Session cleanup utility
 async function cleanupSession() {
   console.log("Cleaning up browser session...");
-  
+
   // Clear session timeout
   if (sessionTimeout) {
     clearTimeout(sessionTimeout);
     sessionTimeout = null;
   }
-  
+
   // Stop streaming
   isStreaming = false;
-  
+
   // Close page if exists
   if (currentPage) {
     try {
@@ -127,7 +127,7 @@ async function cleanupSession() {
     }
     currentPage = null;
   }
-  
+
   // Close context if exists
   if (currentContext) {
     try {
@@ -137,7 +137,7 @@ async function cleanupSession() {
     }
     currentContext = null;
   }
-  
+
   // Close browser if exists (CORRECT: use browser.close(), NOT session.close())
   if (currentBrowser) {
     try {
@@ -147,11 +147,11 @@ async function cleanupSession() {
     }
     currentBrowser = null;
   }
-  
+
   // Reset session - Session automatically terminates when browser connection closes
   currentSession = null;
   isConnected = false;
-  
+
   // Notify all connected clients
   streamingSockets.forEach(ws => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -174,7 +174,7 @@ router.get("/status", async (req, res) => {
     if (currentSession) {
       browserEndpoint = `Browserbase Session: ${currentSession.id}`;
       connectedClients = streamingSockets.size;
-      
+
       if (currentPage) {
         try {
           currentUrl = await currentPage.url();
@@ -211,7 +211,7 @@ router.get("/status", async (req, res) => {
 router.post("/test-connection", async (req, res) => {
   try {
     console.log("Testing Browserbase connection with advanced stealth...");
-    
+
     // Cleanup existing session
     await cleanupSession();
 
@@ -236,19 +236,19 @@ router.post("/test-connection", async (req, res) => {
     });
 
     console.log(`Browserbase session created: ${currentSession.id}`);
-    
+
     // Connect using Playwright CDP
     console.log("Connecting to session via CDP...");
     currentBrowser = await chromium.connectOverCDP(currentSession.connectUrl);
     currentContext = currentBrowser.contexts()[0];
     currentPage = currentContext.pages()[0];
-    
+
     // Set session timeout
     sessionTimeout = setTimeout(async () => {
       console.log("Session timeout reached, cleaning up...");
       await cleanupSession();
     }, 3600000); // 1 hour
-    
+
     console.log("Connected to Browserbase session successfully");
     isConnected = true;
 
@@ -277,7 +277,7 @@ router.post("/test-connection", async (req, res) => {
   } catch (error: any) {
     console.error("Browserbase connection error:", error);
     await cleanupSession();
-    
+
     res.status(500).json({
       success: false,
       message: "Failed to connect to Browserbase",
@@ -291,7 +291,7 @@ router.post("/test-connection", async (req, res) => {
 router.post("/navigate", async (req, res) => {
   try {
     const { url } = navigateSchema.parse(req.body);
-    
+
     if (!currentPage || !isConnected) {
       return res.status(400).json({
         success: false,
@@ -300,7 +300,7 @@ router.post("/navigate", async (req, res) => {
     }
 
     console.log("Navigating to:", url);
-    
+
     // Navigate with timeout
     await currentPage.goto(url, { 
       waitUntil: 'networkidle',
@@ -338,7 +338,7 @@ router.post("/navigate", async (req, res) => {
 router.post("/control", async (req, res) => {
   try {
     const action = controlSchema.parse(req.body);
-    
+
     if (!currentPage || !isConnected) {
       return res.status(400).json({
         success: false,
@@ -353,21 +353,21 @@ router.post("/control", async (req, res) => {
           console.log(`Manual click at ${action.x}, ${action.y}`);
         }
         break;
-        
+
       case 'type':
         if (action.text) {
           await currentPage.keyboard.type(action.text);
           console.log(`Manual type: ${action.text}`);
         }
         break;
-        
+
       case 'scroll':
         if (action.deltaY !== undefined) {
           await currentPage.mouse.wheel(0, action.deltaY);
           console.log(`Manual scroll: ${action.deltaY}`);
         }
         break;
-        
+
       case 'key':
         if (action.key) {
           await currentPage.keyboard.press(action.key);
@@ -403,7 +403,7 @@ router.get("/screenshot", async (req, res) => {
     }
 
     console.log("Taking screenshot...");
-    
+
     const screenshot = await currentPage.screenshot({
       fullPage: false,
       type: 'png'
@@ -441,7 +441,7 @@ router.post("/start-streaming", async (req, res) => {
     }
 
     console.log("Starting Browserbase live view...");
-    
+
     // Get live view URL using Browserbase debug method
     let liveViewUrl = null;
     try {
@@ -457,7 +457,7 @@ router.post("/start-streaming", async (req, res) => {
         details: "Debug URL not available for this session"
       });
     }
-    
+
     if (!liveViewUrl) {
       return res.status(500).json({
         success: false,
@@ -511,7 +511,7 @@ router.post("/stop-streaming", async (req, res) => {
     }
 
     console.log("Stopping Browserbase live view...");
-    
+
     // Notify all connected clients that live view is stopping
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -545,7 +545,7 @@ router.post("/stop-streaming", async (req, res) => {
 router.post("/test-automation", async (req, res) => {
   try {
     const { username, password } = automationSchema.parse(req.body);
-    
+
     if (!currentPage || !isConnected) {
       return res.status(400).json({
         success: false,
@@ -554,7 +554,7 @@ router.post("/test-automation", async (req, res) => {
     }
 
     console.log("Starting comprehensive X/Twitter automation with automated login...");
-    
+
     // Start live streaming automatically
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -574,7 +574,7 @@ router.post("/test-automation", async (req, res) => {
 
   } catch (error: any) {
     console.error("Test automation error:", error);
-    
+
     // Stop streaming on error
     streamingSockets.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -682,7 +682,7 @@ async function performAutomatedLogin(username: string, password: string) {
 
   try {
     console.log('Attempting automated login with username:', username);
-    
+
     // Step 1: Find and fill username field
     console.log('Step 1: Looking for username field...');
     const usernameSelectors = [
@@ -691,7 +691,7 @@ async function performAutomatedLogin(username: string, password: string) {
       'input[data-testid="ocfEnterTextTextInput"]',
       'input[type="text"]'
     ];
-    
+
     let usernameField = null;
     for (const selector of usernameSelectors) {
       try {
@@ -703,11 +703,11 @@ async function performAutomatedLogin(username: string, password: string) {
         continue;
       }
     }
-    
+
     if (!usernameField) {
       throw new Error('Could not find username input field');
     }
-    
+
     // Clear and fill username
     await currentPage.fill(usernameField, username);
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -721,7 +721,7 @@ async function performAutomatedLogin(username: string, password: string) {
       'div[role="button"]:has-text("Next")',
       '[data-testid="ocfEnterTextNextButton"]'
     ];
-    
+
     let nextClicked = false;
     for (const selector of nextSelectors) {
       try {
@@ -734,12 +734,12 @@ async function performAutomatedLogin(username: string, password: string) {
         continue;
       }
     }
-    
+
     if (!nextClicked) {
       console.log('Next button not found, trying Enter key...');
       await currentPage.keyboard.press('Enter');
     }
-    
+
     // Wait for password field to appear
     await new Promise(resolve => setTimeout(resolve, 3000));
 
@@ -750,7 +750,7 @@ async function performAutomatedLogin(username: string, password: string) {
       'input[name="password"]',
       'input[autocomplete="current-password"]'
     ];
-    
+
     let passwordField = null;
     for (const selector of passwordSelectors) {
       try {
@@ -762,11 +762,11 @@ async function performAutomatedLogin(username: string, password: string) {
         continue;
       }
     }
-    
+
     if (!passwordField) {
       throw new Error('Could not find password input field');
     }
-    
+
     // Fill password using Browserbase (should work better than Bright Data)
     await currentPage.fill(passwordField, password);
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -780,7 +780,7 @@ async function performAutomatedLogin(username: string, password: string) {
       'div[role="button"]:has-text("Log in")',
       'button[type="submit"]'
     ];
-    
+
     let loginClicked = false;
     for (const selector of loginSelectors) {
       try {
@@ -793,12 +793,12 @@ async function performAutomatedLogin(username: string, password: string) {
         continue;
       }
     }
-    
+
     if (!loginClicked) {
       console.log('Login button not found, trying Enter key...');
       await currentPage.keyboard.press('Enter');
     }
-    
+
     // Wait for login to complete
     await new Promise(resolve => setTimeout(resolve, 8000));
     console.log('Automated login process completed');
@@ -859,7 +859,7 @@ router.post("/test-script", async (req, res) => {
     if (needsLogin) {
       // 6. Request manual intervention
       console.log("🔐 Manual login required");
-      
+
       // Notify WebSocket clients
       broadcastToClients({
         type: 'automation_progress',
@@ -907,7 +907,7 @@ async function checkIfLoginNeeded(page: Page) {
     const loginButton = await page.$('[data-testid="LoginForm_Login_Button"]');
     const emailInput = await page.$('[name="text"]');
     const passwordInput = await page.$('[name="password"]');
-    
+
     return !!(loginButton || emailInput || passwordInput);
   } catch (error) {
     return true; // Assume login needed if check fails
@@ -918,12 +918,12 @@ async function checkIfLoginNeeded(page: Page) {
 async function waitForLoginAndContinue(page: Page, sessionId: string) {
   try {
     console.log("⏳ Waiting for login completion...");
-    
+
     const loginDetected = await waitForLoginCompletion(page);
-    
+
     if (loginDetected) {
       console.log("✅ Login detected! Continuing automation...");
-      
+
       // Notify clients
       broadcastToClients({
         type: 'login_detected',
@@ -963,7 +963,7 @@ async function waitForLoginCompletion(page: Page) {
       const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
       const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
       const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
-      
+
       if (homeButton || profileButton || composeButton) {
         return true;
       }
@@ -1043,7 +1043,7 @@ async function performTestAutomation(page: Page, sessionId: string) {
       const replyButton = await page.$('[data-testid="reply"]');
       if (replyButton) {
         await replyButton.click();
-        
+
         broadcastToClients({
           type: 'automation_progress',
           message: 'Opening comment section...',
@@ -1063,7 +1063,7 @@ async function performTestAutomation(page: Page, sessionId: string) {
         const commentBox = await page.$('[data-testid="tweetTextarea_0"]');
         if (commentBox) {
           await commentBox.type("Interesting", { delay: 100 });
-          
+
           // Submit comment
           const submitButton = await page.$('[data-testid="tweetButtonInline"]');
           if (submitButton) {
@@ -1083,7 +1083,7 @@ async function performTestAutomation(page: Page, sessionId: string) {
 
     // 7. Automation complete
     console.log("🎉 Test automation completed successfully!");
-    
+
     broadcastToClients({
       type: 'automation_complete',
       message: 'Test automation completed successfully!',
@@ -1111,21 +1111,21 @@ async function performTestAutomation(page: Page, sessionId: string) {
 async function scrollToLoadPosts(page: Page, targetPostCount: number) {
   let attempts = 0;
   const maxAttempts = 10;
-  
+
   while (attempts < maxAttempts) {
     const posts = await page.$$('[data-testid="tweet"]');
-    
+
     if (posts.length >= targetPostCount) {
       console.log(`✅ Found ${posts.length} posts`);
       return;
     }
-    
+
     console.log(`Found ${posts.length} posts, scrolling for more...`);
     await page.evaluate(() => window.scrollBy(0, 800));
     await page.waitForTimeout(2000);
     attempts++;
   }
-  
+
   console.log(`Stopped after ${maxAttempts} scroll attempts`);
 }
 
