@@ -2,7 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import WebSocket from "ws";
 import { Browserbase } from "@browserbasehq/sdk";
-import { Page } from "playwright-core";
+import { chromium } from "playwright-core";
+import { Page, Browser, BrowserContext } from "playwright-core";
 
 const router = Router();
 
@@ -13,10 +14,13 @@ const browserbase = new Browserbase({
 
 // Global state for browser session management
 let currentSession: any = null;
+let currentBrowser: Browser | null = null;
+let currentContext: BrowserContext | null = null;
 let currentPage: Page | null = null;
 let isConnected = false;
 let isStreaming = false;
 let streamingSockets = new Set<WebSocket>();
+let sessionTimeout: NodeJS.Timeout | null = null;
 
 // Request schemas
 const navigateSchema = z.object({
@@ -86,6 +90,64 @@ export function handleBrowserWebSocket(ws: WebSocket) {
   });
 }
 
+// Session cleanup utility
+async function cleanupSession() {
+  console.log("Cleaning up browser session...");
+  
+  // Clear session timeout
+  if (sessionTimeout) {
+    clearTimeout(sessionTimeout);
+    sessionTimeout = null;
+  }
+  
+  // Stop streaming
+  isStreaming = false;
+  
+  // Close page if exists
+  if (currentPage) {
+    try {
+      await currentPage.close();
+    } catch (e) {
+      console.log("Page close error (expected):", e);
+    }
+    currentPage = null;
+  }
+  
+  // Close context if exists
+  if (currentContext) {
+    try {
+      await currentContext.close();
+    } catch (e) {
+      console.log("Context close error (expected):", e);
+    }
+    currentContext = null;
+  }
+  
+  // Close browser if exists
+  if (currentBrowser) {
+    try {
+      await currentBrowser.close();
+    } catch (e) {
+      console.log("Browser close error (expected):", e);
+    }
+    currentBrowser = null;
+  }
+  
+  // Reset session
+  currentSession = null;
+  isConnected = false;
+  
+  // Notify all connected clients
+  streamingSockets.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'session_closed',
+        message: 'Browser session has been terminated'
+      }));
+    }
+  });
+}
+
 // Get browser status
 router.get("/status", async (req, res) => {
   try {
@@ -130,57 +192,71 @@ router.get("/status", async (req, res) => {
   }
 });
 
-// Test connection to Browserbase
+// Test connection to Browserbase with enhanced stealth
 router.post("/test-connection", async (req, res) => {
   try {
-    console.log("Testing Browserbase connection...");
+    console.log("Testing Browserbase connection with advanced stealth...");
     
-    // Close existing session if any
-    if (currentSession) {
-      try {
-        await browserbase.sessions.retrieve(currentSession.id);
-        console.log("Previous session found, cleaning up...");
-      } catch (error) {
-        console.log("Previous session already closed");
-      }
-      currentSession = null;
-      currentPage = null;
-    }
+    // Cleanup existing session
+    await cleanupSession();
 
-    // Create new Browserbase session
-    console.log("Creating new Browserbase session...");
+    // Create new Browserbase session with stealth configuration
+    console.log("Creating new Browserbase session with stealth settings...");
     currentSession = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
-        viewport: { width: 1400, height: 900 }
-      }
+        advancedStealth: true,
+        viewport: { width: 1280, height: 720 },
+        fingerprint: {
+          devices: ["desktop"],
+          locales: ["en-US"],
+          operatingSystems: ["windows"]
+        }
+      },
+      proxies: true,
+      timeout: 3600000 // 1 hour
     });
 
     console.log(`Browserbase session created: ${currentSession.id}`);
     
-    // Connect to the session
-    const page = await currentSession.connect();
-    currentPage = page;
+    // Connect using Playwright CDP
+    console.log("Connecting to session via CDP...");
+    currentBrowser = await chromium.connectOverCDP(currentSession.connectUrl);
+    currentContext = currentBrowser.contexts()[0];
+    currentPage = currentContext.pages()[0];
+    
+    // Set session timeout
+    sessionTimeout = setTimeout(async () => {
+      console.log("Session timeout reached, cleaning up...");
+      await cleanupSession();
+    }, 3600000); // 1 hour
     
     console.log("Connected to Browserbase session successfully");
     isConnected = true;
 
-    // Get live view URL for immediate use
-    const liveViewUrl = (currentSession as any).debuggerFullscreenUrl || (currentSession as any).liveUrls?.connect;
+    // Get live view URL using debug method
+    let liveViewUrl = null;
+    try {
+      const liveViewLinks = await browserbase.sessions.debug(currentSession.id);
+      liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+      console.log("Live view URL obtained:", liveViewUrl);
+    } catch (debugError) {
+      console.log("Live view URL not immediately available:", debugError);
+    }
 
     res.json({
       success: true,
-      message: "Successfully connected to Browserbase",
+      message: "Successfully connected to Browserbase with stealth",
       sessionId: currentSession.id,
-      liveViewUrl: liveViewUrl || null,
+      liveViewUrl: liveViewUrl,
+      stealthEnabled: true,
+      timeout: "1 hour",
       status: "connected"
     });
 
   } catch (error: any) {
     console.error("Browserbase connection error:", error);
-    isConnected = false;
-    currentSession = null;
-    currentPage = null;
+    await cleanupSession();
     
     res.status(500).json({
       success: false,
@@ -334,7 +410,7 @@ router.get("/screenshot", async (req, res) => {
   }
 });
 
-// Start live streaming (using Browserbase native live view)
+// Start live streaming (using Browserbase debug URL)
 router.post("/start-streaming", async (req, res) => {
   try {
     if (!currentSession || !isConnected) {
@@ -344,55 +420,30 @@ router.post("/start-streaming", async (req, res) => {
       });
     }
 
-    if (isStreaming) {
-      const liveViewUrl = (currentSession as any).debuggerFullscreenUrl || (currentSession as any).liveUrls?.connect;
-      return res.json({
-        success: true,
-        message: "Live streaming already active",
-        liveViewUrl
-      });
-    }
-
     console.log("Starting Browserbase live view...");
     
-    // Get live view URL from Browserbase - use debuggerFullscreenUrl for iframe embedding
-    const liveViewUrl = (currentSession as any).debuggerFullscreenUrl || (currentSession as any).liveUrls?.connect;
+    // Get live view URL using Browserbase debug method
+    let liveViewUrl = null;
+    try {
+      const liveViewLinks = await browserbase.sessions.debug(currentSession.id);
+      liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+      console.log("Live view URL obtained from debug:", liveViewUrl);
+    } catch (debugError) {
+      console.error("Failed to get live view URL:", debugError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to obtain live view URL",
+        error: debugError,
+        details: "Debug URL not available for this session"
+      });
+    }
     
     if (!liveViewUrl) {
-      // Try to retrieve session details to get live URLs
-      try {
-        const sessionDetails = await browserbase.sessions.retrieve(currentSession.id);
-        const refreshedLiveUrl = (sessionDetails as any).debuggerFullscreenUrl || (sessionDetails as any).liveUrls?.connect;
-        
-        if (!refreshedLiveUrl) {
-          throw new Error("Live view URL not available - session may not be ready");
-        }
-        
-        currentSession = sessionDetails; // Update with latest session data
-        
-        // Broadcast live view URL to all connected WebSocket clients
-        streamingSockets.forEach(ws => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              type: 'live_view_url',
-              url: refreshedLiveUrl,
-              message: 'Live view ready for iframe embedding'
-            }));
-          }
-        });
-
-        isStreaming = true;
-        console.log("Browserbase live view started successfully with URL:", refreshedLiveUrl);
-
-        return res.json({
-          success: true,
-          message: "Live view started",
-          liveViewUrl: refreshedLiveUrl,
-          status: "streaming"
-        });
-      } catch (retrieveError) {
-        throw new Error(`Failed to retrieve live view URL: ${retrieveError}`);
-      }
+      return res.status(500).json({
+        success: false,
+        message: "Live view URL not available",
+        details: "Session may not be ready for debugging"
+      });
     }
 
     // Broadcast live view URL to all connected WebSocket clients
@@ -401,7 +452,8 @@ router.post("/start-streaming", async (req, res) => {
         ws.send(JSON.stringify({
           type: 'live_view_url',
           url: liveViewUrl,
-          message: 'Live view ready for iframe embedding'
+          message: 'Browserbase live view ready for iframe embedding',
+          sessionId: currentSession.id
         }));
       }
     });
@@ -413,6 +465,7 @@ router.post("/start-streaming", async (req, res) => {
       success: true,
       message: "Live view started",
       liveViewUrl,
+      sessionId: currentSession.id,
       status: "streaming"
     });
 
@@ -524,54 +577,20 @@ router.post("/test-automation", async (req, res) => {
 // Close browser session
 router.delete("/session", async (req, res) => {
   try {
-    console.log("Closing browser session...");
-    
-    // Stop streaming
-    isStreaming = false;
-    
-    // Close page if exists
-    if (currentPage) {
-      try {
-        await currentPage.close();
-      } catch (e) {
-        console.log("Page close error (expected):", e);
-      }
-      currentPage = null;
-    }
-    
-    // Close session if exists
-    if (currentSession) {
-      try {
-        // Browserbase sessions are automatically cleaned up
-        console.log(`Session ${currentSession.id} marked for cleanup`);
-      } catch (e) {
-        console.log("Session cleanup error (expected):", e);
-      }
-      currentSession = null;
-    }
-    
-    isConnected = false;
-    
-    // Notify all connected clients
-    streamingSockets.forEach(ws => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'session_closed'
-        }));
-      }
-    });
+    console.log("Terminating browser session...");
+    await cleanupSession();
 
     res.json({
       success: true,
-      message: "Browser session closed successfully",
+      message: "Browser session terminated successfully",
       status: "closed"
     });
 
   } catch (error: any) {
-    console.error("Session close error:", error);
+    console.error("Session termination error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to close browser session",
+      message: "Failed to terminate browser session",
       error: error.message
     });
   }

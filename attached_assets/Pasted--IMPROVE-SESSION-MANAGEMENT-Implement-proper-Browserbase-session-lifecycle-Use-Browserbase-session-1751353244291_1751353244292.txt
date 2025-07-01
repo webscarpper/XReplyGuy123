@@ -1,0 +1,72 @@
+ IMPROVE SESSION MANAGEMENT
+Implement proper Browserbase session lifecycle:
+
+Use Browserbase session creation with stealth mode enabled
+Implement session timeout management (1 hour default)
+Add proper session termination
+Include session metadata for tracking
+4. ENHANCE STEALTH CAPABILITIES
+Configure Browserbase advanced stealth for Twitter automation:
+
+Enable advancedStealth: true for all sessions
+Configure realistic browser fingerprints
+Enable residential proxies
+Set appropriate viewport sizes
+5. MAINTAIN WEBSOCKET FUNCTIONALITY
+Update WebSocket handling for live view:
+
+Replace screenshot broadcasting with live view URL sharing
+Maintain real-time status updates
+Keep automation progress notifications
+Ensure manual intervention notifications work
+SPECIFIC IMPLEMENTATION REQUIREMENTS
+Session Creation Pattern:
+import Browserbase from "@browserbasehq/sdk";
+
+const bb = new Browserbase({
+  apiKey: process.env.BROWSERBASE_API_KEY
+});
+
+const session = await bb.sessions.create({
+  projectId: process.env.BROWSERBASE_PROJECT_ID,
+  browserSettings: {
+    advancedStealth: true,
+    viewport: { width: 1280, height: 720 },
+    fingerprint: {
+      devices: ["desktop"],
+      locales: ["en-US"],
+      operatingSystems: ["windows"]
+    }
+  },
+  proxies: true,
+  timeout: 3600000 // 1 hour
+});
+Live View Integration:
+// Get live view URL for frontend embedding
+const liveViewLinks = await bb.sessions.debug(session.id);
+const liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+
+// Send to WebSocket clients
+ws.send(JSON.stringify({
+  type: 'live_view_url',
+  url: liveViewUrl
+}));
+Browser Connection:
+import { chromium } from "playwright-core";
+
+// Connect to Browserbase session
+const browser = await chromium.connectOverCDP(session.connectUrl);
+const defaultContext = browser.contexts()[0];
+const page = defaultContext.pages()[0];
+CRITICAL REQUIREMENTS
+MAINTAIN API COMPATIBILITY: All existing frontend calls to test-browser endpoints must continue working
+IMPROVE LIVE VIEW: Replace screenshot streaming with proper Browserbase live view URLs
+ENHANCE RELIABILITY: Use Browserbase's robust session management
+PRESERVE WEBSOCKET: Keep real-time communication for automation status
+TWITTER OPTIMIZATION: Ensure stealth settings work specifically for Twitter automation
+FILES TO MODIFY
+server/routes/test-browser.ts (complete rewrite)
+package.json (add Browserbase SDK)
+Environment variables (add Browserbase credentials)
+Any related TypeScript types if needed
+IMPORTANT: Focus on the /dashboard/test-browser page functionality first. This is a testing environment, so prioritize getting the basic Browserbase integration working before optimizing for production use.
