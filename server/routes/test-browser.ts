@@ -217,7 +217,7 @@ router.post("/test-connection", async (req, res) => {
         }
       },
       proxies: true, // 1 GB included in Developer plan
-      timeout: 3600000 // 1 hour
+      timeout: 3600 // 1 hour in seconds
     });
 
     console.log(`Browserbase session created: ${currentSession.id}`);
