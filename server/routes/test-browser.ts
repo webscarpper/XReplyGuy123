@@ -1363,16 +1363,16 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
         await cursor.click(commentBox.first());
         await page.waitForTimeout(500);
 
-        // Ensure proper focus and clear any existing content
-        await commentBox.first().focus();
-        await page.keyboard.press('Control+a');
-        await page.keyboard.press('Delete');
-        await page.waitForTimeout(300);
+        // OFFICIAL: Improved comment typing with validation
+        console.log("⌨️ Typing comment...");
 
-        // Type meaningful content that meets Twitter requirements
+        // Step 1: Ensure text area is properly focused
+        await commentBox.first().focus();
+        await page.waitForTimeout(500);
+
+        // Step 2: Clear and type using official fill method
         const replyText = "GM! Hope you're having a great day! 🌅 Thanks for sharing this!";
-        console.log("⌨️ Typing enhanced comment...");
-        await page.keyboard.type(replyText, { delay: 80 + Math.random() * 40 });
+        await commentBox.first().fill(replyText); // ✅ OFFICIAL: Clears and fills in one action
 
         // Wait for Twitter's content validation
         await page.waitForTimeout(2000);
