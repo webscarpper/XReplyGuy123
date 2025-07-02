@@ -1693,11 +1693,13 @@ async function openYouTubeAndScroll(page: Page, sessionId: string) {
       if (youtubeTabLiveView) {
         console.log(`🎥 YouTube tab live view URL: ${youtubeTabLiveView.debuggerFullscreenUrl}`);
         
-        // Broadcast YouTube tab live view URL
+        // Broadcast YouTube tab live view URL for secondary iframe
         broadcastToClients({
-          type: 'youtube_tab_opened',
-          message: 'YouTube tab opened - you can now see it!',
-          youtubeTabUrl: youtubeTabLiveView.debuggerFullscreenUrl,
+          type: 'secondary_tab_opened',
+          tabType: 'youtube',
+          tabName: 'YouTube Tab',
+          tabUrl: youtubeTabLiveView.debuggerFullscreenUrl,
+          message: 'YouTube tab opened - now visible in secondary live view',
           allTabs: allTabs.map(tab => ({
             title: tab.title,
             url: tab.url,
@@ -1734,13 +1736,21 @@ async function openYouTubeAndScroll(page: Page, sessionId: string) {
     
     // Notify before closing
     broadcastToClients({
-      type: 'youtube_tab_closing',
+      type: 'secondary_tab_closing',
+      tabType: 'youtube',
       message: 'Closing YouTube tab, returning to X...'
     });
     
     // Close the YouTube tab
     await youtubeTab.close();
     console.log("✅ YouTube tab closed, returning to X");
+    
+    // Notify that secondary tab is closed
+    broadcastToClients({
+      type: 'secondary_tab_closed',
+      tabType: 'youtube',
+      message: 'YouTube tab closed - secondary view hidden'
+    });
     
     // Small delay before continuing
     await page.waitForTimeout(1000 + Math.random() * 2000);

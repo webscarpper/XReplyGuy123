@@ -65,6 +65,11 @@ export default function TestBrowser() {
   const [showManualIntervention, setShowManualIntervention] = useState(false);
   const [testScriptLiveViewUrl, setTestScriptLiveViewUrl] = useState<string>('');
 
+  // Secondary tab live view state
+  const [secondaryTabUrl, setSecondaryTabUrl] = useState<string | null>(null);
+  const [secondaryTabName, setSecondaryTabName] = useState<string>('');
+  const [showSecondaryTab, setShowSecondaryTab] = useState(false);
+
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const sessionStartTime = useRef<number>(0);
 
@@ -163,25 +168,38 @@ export default function TestBrowser() {
               setLiveViewUrl(data.liveViewUrl);
             }
             break;
-          case 'youtube_tab_opened':
-            console.log('🎥 YouTube tab opened:', data.youtubeTabUrl);
+          case 'secondary_tab_opened':
+            console.log(`🎥 ${data.tabType} tab opened:`, data.tabUrl);
             console.log('📺 All tabs:', data.allTabs);
 
-            // Show YouTube URL in console for manual viewing
-            console.log('YouTube Live View URL:', data.youtubeTabUrl);
-
-            // Update status to show YouTube tab is available
+            // Show secondary tab in the UI
+            setSecondaryTabUrl(data.tabUrl);
+            setSecondaryTabName(data.tabName || 'Secondary Tab');
+            setShowSecondaryTab(true);
+            
+            // Update status
             setAutomation(prev => ({
               ...prev,
-              message: `${data.message} - Copy YouTube URL from console to view in new tab`
+              message: data.message || `${data.tabType} tab opened in secondary view`
             }));
             break;
 
-          case 'youtube_tab_closing':
-            console.log('🔄 YouTube tab closing, returning to X');
+          case 'secondary_tab_closing':
+            console.log(`🔄 ${data.tabType} tab closing, returning to X`);
             setAutomation(prev => ({
               ...prev,
-              message: 'YouTube tab closing, returning to X...'
+              message: data.message || `${data.tabType} tab closing...`
+            }));
+            break;
+
+          case 'secondary_tab_closed':
+            console.log(`✅ ${data.tabType} tab closed`);
+            setShowSecondaryTab(false);
+            setSecondaryTabUrl(null);
+            setSecondaryTabName('');
+            setAutomation(prev => ({
+              ...prev,
+              message: data.message || `${data.tabType} tab closed`
             }));
             break;
         }
@@ -652,9 +670,14 @@ export default function TestBrowser() {
                       LIVE
                     </Badge>
                   )}
+                  {showSecondaryTab && (
+                    <Badge variant="outline" className="text-blue-400 border-blue-400">
+                      DUAL VIEW
+                    </Badge>
+                  )}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="h-[800px]">
+              <CardContent className={showSecondaryTab ? "h-[800px] space-y-4" : "h-[800px]"}>
                 {showManualIntervention && testScriptLiveViewUrl ? (
                   <div className="h-full">
                     <div className="mb-4 p-4 bg-yellow-900/50 rounded-lg border border-yellow-500/30">
@@ -673,13 +696,50 @@ export default function TestBrowser() {
                     />
                   </div>
                 ) : liveViewUrl ? (
-                  <iframe
-                    ref={iframeRef}
-                    src={liveViewUrl}
-                    className="w-full h-full border-0 rounded-lg bg-white"
-                    title="Browserbase Live View"
-                    allow="camera; microphone; display-capture"
-                  />
+                  showSecondaryTab ? (
+                    <div className="h-full space-y-4">
+                      {/* Main X Tab */}
+                      <div className="h-[48%]">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant="outline" className="text-purple-400 border-purple-400">
+                            X Tab
+                          </Badge>
+                          <span className="text-sm text-gray-400">Main automation view</span>
+                        </div>
+                        <iframe
+                          ref={iframeRef}
+                          src={liveViewUrl}
+                          className="w-full h-full border-0 rounded-lg bg-white"
+                          title="Browserbase Live View - X Tab"
+                          allow="camera; microphone; display-capture"
+                        />
+                      </div>
+                      
+                      {/* Secondary Tab */}
+                      <div className="h-[48%]">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant="outline" className="text-blue-400 border-blue-400">
+                            {secondaryTabName}
+                          </Badge>
+                          <span className="text-sm text-gray-400">Secondary tab live view</span>
+                        </div>
+                        <iframe
+                          src={secondaryTabUrl || ''}
+                          className="w-full h-full border-0 rounded-lg bg-white"
+                          title={`Browserbase Live View - ${secondaryTabName}`}
+                          allow="camera; microphone; display-capture"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <iframe
+                      ref={iframeRef}
+                      src={liveViewUrl}
+                      className="w-full h-full border-0 rounded-lg bg-white"
+                      title="Browserbase Live View"
+                      allow="camera; microphone; display-capture"
+                    />
+                  )
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-gray-900 rounded-lg border-2 border-dashed border-gray-600">
                     <div className="text-center">
