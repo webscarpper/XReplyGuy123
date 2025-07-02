@@ -835,6 +835,110 @@ async function performAutomatedLogin(username: string, password: string) {
   }
 }
 
+// Human-like typing function with realistic behavior patterns
+async function typeWithHumanBehavior(page: Page, text: string) {
+  try {
+    console.log(`🎯 Typing "${text}" with human-like behavior...`);
+    
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      
+      // 1. Random thinking pause (8% chance)
+      if (Math.random() < 0.08) {
+        const thinkingDelay = 400 + Math.random() * 800; // 400-1200ms thinking pause
+        console.log(`🤔 Thinking pause: ${Math.round(thinkingDelay)}ms`);
+        await page.waitForTimeout(thinkingDelay);
+      }
+      
+      // 2. Occasional typo simulation (5% chance)
+      if (Math.random() < 0.05 && i > 2) {
+        console.log('❌ Making a typo...');
+        
+        // Type a wrong character first
+        const wrongChars = 'qwertyuiopasdfghjklzxcvbnm';
+        const wrongChar = wrongChars[Math.floor(Math.random() * wrongChars.length)];
+        await page.keyboard.type(wrongChar);
+        
+        // Pause as human realizes mistake
+        await page.waitForTimeout(200 + Math.random() * 300);
+        
+        // Backspace to correct
+        await page.keyboard.press('Backspace');
+        await page.waitForTimeout(100 + Math.random() * 200);
+        
+        console.log('🔙 Correcting typo...');
+      }
+      
+      // 3. Random backspace and retype (3% chance, but not on first few chars)
+      if (Math.random() < 0.03 && i > 5) {
+        console.log('🔄 Deleting and retyping...');
+        
+        // Delete 2-4 previous characters
+        const deleteCount = 2 + Math.floor(Math.random() * 3);
+        for (let d = 0; d < deleteCount; d++) {
+          await page.keyboard.press('Backspace');
+          await page.waitForTimeout(80 + Math.random() * 120);
+        }
+        
+        // Pause before retyping
+        await page.waitForTimeout(300 + Math.random() * 400);
+        
+        // Retype the deleted characters plus current one
+        const startIndex = Math.max(0, i - deleteCount + 1);
+        const retypeText = text.substring(startIndex, i + 1);
+        
+        for (const retypeChar of retypeText) {
+          await page.keyboard.type(retypeChar);
+          const retypeDelay = 90 + Math.random() * 120;
+          await page.waitForTimeout(retypeDelay);
+        }
+        
+        console.log(`✅ Retyped: "${retypeText}"`);
+        continue; // Skip normal typing for this character
+      }
+      
+      // 4. Type the character with variable speed
+      await page.keyboard.type(char);
+      
+      // 5. Calculate realistic delay based on character type
+      let baseDelay = 120 + Math.random() * 180; // 120-300ms base
+      
+      // Character-specific delays
+      if (char === ' ') {
+        baseDelay += 80; // Longer pause after words
+      } else if (char.match(/[.!?]/)) {
+        baseDelay += 150; // Pause after punctuation
+      } else if (char.match(/[,;:]/)) {
+        baseDelay += 100; // Medium pause after minor punctuation
+      } else if (char.match(/[A-Z]/)) {
+        baseDelay += 50; // Slightly longer for capitals
+      } else if (char.match(/[0-9]/)) {
+        baseDelay += 30; // Numbers are slightly slower
+      }
+      
+      // 6. Add random variation (human inconsistency)
+      const variation = (Math.random() - 0.5) * 100; // ±50ms variation
+      const finalDelay = Math.max(50, baseDelay + variation);
+      
+      await page.waitForTimeout(finalDelay);
+      
+      // 7. Occasional longer pause mid-sentence (2% chance)
+      if (Math.random() < 0.02 && char !== ' ') {
+        const midPause = 500 + Math.random() * 1000;
+        console.log(`⏸️ Mid-sentence pause: ${Math.round(midPause)}ms`);
+        await page.waitForTimeout(midPause);
+      }
+    }
+    
+    console.log(`✅ Finished typing with human-like behavior`);
+    
+  } catch (error: any) {
+    console.error('❌ Human typing error:', error.message);
+    // Fallback to simple typing if our advanced typing fails
+    await page.keyboard.type(text, { delay: 100 });
+  }
+}
+
 // POST /api/test-browser/test-script - Human-like automation with verified functions
 router.post("/test-script", async (req, res) => {
   try {
@@ -1422,14 +1526,20 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
           });
         }
 
-        console.log("⌨️ Typing AI-generated comment...");
+        console.log("⌨️ Starting human-like typing...");
 
         // Step 1: Ensure text area is properly focused
         await commentBox.first().focus();
         await page.waitForTimeout(500);
 
-        // Step 2: Clear and type using official fill method
-        await commentBox.first().fill(replyText); // ✅ OFFICIAL: Clears and fills in one action
+        // Step 2: Clear any existing content first
+        await page.keyboard.press('Control+a');
+        await page.waitForTimeout(100);
+        await page.keyboard.press('Delete');
+        await page.waitForTimeout(300);
+
+        // Step 3: Type with human-like behavior using our custom function
+        await typeWithHumanBehavior(page, replyText);
 
         // Wait for Twitter's content validation
         await page.waitForTimeout(2000);
