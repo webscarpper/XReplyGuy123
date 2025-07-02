@@ -1391,6 +1391,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
         
         // Extract the post content first
         const postContent = await extractPostContent(page);
+        console.log('📄 Extracted post content for AI:', postContent.substring(0, 100) + '...');
         
         // Add thinking delay (human-like behavior)
         const thinkingDelay = 2000 + Math.random() * 3000; // 2-5 seconds
@@ -1398,16 +1399,28 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
         await page.waitForTimeout(thinkingDelay);
         
         // Generate AI reply based on post content
-        const replyText = await AIReplyService.generateReply(postContent, 'conversational');
-        
-        console.log('💬 AI Generated Reply:', replyText);
-        
-        broadcastToClients({
-          type: 'automation_progress',
-          message: `AI generated reply: "${replyText.substring(0, 50)}..."`,
-          step: 'ai_reply_generated',
-          liveViewUrl: liveViewUrl
-        });
+        let replyText;
+        try {
+          replyText = await AIReplyService.generateReply(postContent, 'conversational');
+          console.log('✅ AI Generated Reply:', replyText);
+          
+          broadcastToClients({
+            type: 'automation_progress',
+            message: `AI generated reply: "${replyText.substring(0, 50)}..."`,
+            step: 'ai_reply_generated',
+            liveViewUrl: liveViewUrl
+          });
+        } catch (aiError: any) {
+          console.log('⚠️ AI generation failed, using fallback:', aiError.message);
+          replyText = "Interesting perspective! Thanks for sharing this. 👍";
+          
+          broadcastToClients({
+            type: 'automation_progress',
+            message: 'AI unavailable, using fallback reply',
+            step: 'ai_fallback_used',
+            liveViewUrl: liveViewUrl
+          });
+        }
 
         console.log("⌨️ Typing AI-generated comment...");
 
@@ -1421,8 +1434,8 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
         // Wait for Twitter's content validation
         await page.waitForTimeout(2000);
 
-        // Validate content meets requirements
-        await validateReplyContent(page, commentBox.first());
+        // Validate content meets requirements (but preserve AI-generated content)
+        await validateReplyContent(page, commentBox.first(), replyText);
 
         // Additional wait for UI state to update
         await page.waitForTimeout(1000);
@@ -1605,8 +1618,8 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
   }
 }
 
-// OFFICIAL: Validate reply content meets Twitter requirements
-async function validateReplyContent(page: Page, commentBox: any) {
+// OFFICIAL: Validate reply content meets Twitter requirements while preserving AI content
+async function validateReplyContent(page: Page, commentBox: any, originalReply?: string) {
   try {
     // Get current text content
     const currentText = await commentBox.inputValue();
@@ -1614,12 +1627,20 @@ async function validateReplyContent(page: Page, commentBox: any) {
     
     // Check text length (Twitter minimum is usually 1 character, but longer is better)
     if (currentText.length < 10) {
-      console.log("⚠️ Text too short, adding more content...");
+      console.log("⚠️ Text too short, enhancing AI reply...");
       
-      // Add more content
-      await commentBox.focus();
-      await page.keyboard.press('End'); // Go to end of text
-      await page.keyboard.type(" Thanks for sharing! 👍", { delay: 50 });
+      // If we have original AI reply, enhance it instead of replacing
+      if (originalReply && originalReply.length > 5) {
+        const enhancedReply = originalReply + " 👍";
+        await commentBox.focus();
+        await commentBox.fill(enhancedReply);
+        console.log(`✅ Enhanced AI reply: "${enhancedReply}"`);
+      } else {
+        // Fallback enhancement
+        await commentBox.focus();
+        await page.keyboard.press('End');
+        await page.keyboard.type(" Thanks for sharing! 👍", { delay: 50 });
+      }
       await page.waitForTimeout(1000);
     }
     
