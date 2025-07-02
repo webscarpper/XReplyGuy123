@@ -843,7 +843,7 @@ async function typeWithHumanBehavior(page: Page, text: string) {
     // Track if we've already made a typo (limit to 1 per text)
     let typoMade = false;
 
-    for (let i = 0; < text.length; i++) {
+    for (let i = 0; i < text.length; i++) {
       const char = text[i];
 
       // 1. Random thinking pause (8% chance)
@@ -1968,7 +1968,7 @@ async function checkIfLoginNeeded(page: Page) {
       - Final result: Login ${loginNeeded ? 'NEEDED' : 'NOT NEEDED'}`);
 
     return loginNeeded;
-  } catch (error): any) {
+  } catch (error: any) {
     console.log("⚠️ Login check failed, assuming login needed:", error);
     return true; // Assume login needed if check fails
   }
