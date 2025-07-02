@@ -839,74 +839,74 @@ async function performAutomatedLogin(username: string, password: string) {
 async function typeWithHumanBehavior(page: Page, text: string) {
   try {
     console.log(`🎯 Typing "${text}" with human-like behavior...`);
-    
+
     // Track if we've already made a typo (limit to 1 per text)
     let typoMade = false;
-    
-    for (let i = 0; i < text.length; i++) {
+
+    for (let i = 0; < text.length; i++) {
       const char = text[i];
-      
+
       // 1. Random thinking pause (8% chance)
       if (Math.random() < 0.08) {
         const thinkingDelay = 400 + Math.random() * 800; // 400-1200ms thinking pause
         console.log(`🤔 Thinking pause: ${Math.round(thinkingDelay)}ms`);
         await page.waitForTimeout(thinkingDelay);
       }
-      
+
       // 2. Occasional typo simulation (only once per text, 3% chance, after 25% of text)
       if (!typoMade && Math.random() < 0.03 && i > Math.floor(text.length * 0.25)) {
         console.log('❌ Making a single typo...');
         typoMade = true; // Mark that we've made our one typo
-        
+
         // Type a wrong character first
         const wrongChars = 'qwertyuiopasdfghjklzxcvbnm';
         const wrongChar = wrongChars[Math.floor(Math.random() * wrongChars.length)];
         await page.keyboard.type(wrongChar);
-        
+
         // Pause as human realizes mistake
         await page.waitForTimeout(200 + Math.random() * 300);
-        
+
         // Backspace to correct
         await page.keyboard.press('Backspace');
         await page.waitForTimeout(100 + Math.random() * 200);
-        
+
         console.log('🔙 Correcting typo...');
       }
-      
+
       // 3. Random backspace and retype (2% chance, but not on first few chars)
       if (Math.random() < 0.02 && i > 5) {
         console.log('🔄 Deleting and retyping...');
-        
+
         // Delete 2-4 previous characters
         const deleteCount = 2 + Math.floor(Math.random() * 3);
         for (let d = 0; d < deleteCount; d++) {
           await page.keyboard.press('Backspace');
           await page.waitForTimeout(80 + Math.random() * 120);
         }
-        
+
         // Pause before retyping
         await page.waitForTimeout(300 + Math.random() * 400);
-        
+
         // Retype the deleted characters plus current one
         const startIndex = Math.max(0, i - deleteCount + 1);
         const retypeText = text.substring(startIndex, i + 1);
-        
+
         for (const retypeChar of retypeText) {
           await page.keyboard.type(retypeChar);
           const retypeDelay = 90 + Math.random() * 120;
           await page.waitForTimeout(retypeDelay);
         }
-        
+
         console.log(`✅ Retyped: "${retypeText}"`);
         continue; // Skip normal typing for this character
       }
-      
+
       // 4. Type the character with variable speed
       await page.keyboard.type(char);
-      
+
       // 5. Calculate realistic delay based on character type
       let baseDelay = 120 + Math.random() * 180; // 120-300ms base
-      
+
       // Character-specific delays
       if (char === ' ') {
         baseDelay += 80; // Longer pause after words
@@ -919,13 +919,13 @@ async function typeWithHumanBehavior(page: Page, text: string) {
       } else if (char.match(/[0-9]/)) {
         baseDelay += 30; // Numbers are slightly slower
       }
-      
+
       // 6. Add random variation (human inconsistency)
       const variation = (Math.random() - 0.5) * 100; // ±50ms variation
       const finalDelay = Math.max(50, baseDelay + variation);
-      
+
       await page.waitForTimeout(finalDelay);
-      
+
       // 7. Occasional longer pause mid-sentence (2% chance)
       if (Math.random() < 0.02 && char !== ' ') {
         const midPause = 500 + Math.random() * 1000;
@@ -933,9 +933,9 @@ async function typeWithHumanBehavior(page: Page, text: string) {
         await page.waitForTimeout(midPause);
       }
     }
-    
+
     console.log(`✅ Finished typing with human-like behavior`);
-    
+
   } catch (error: any) {
     console.error('❌ Human typing error:', error.message);
     // Fallback to simple typing if our advanced typing fails
@@ -979,7 +979,7 @@ router.post("/test-script", async (req, res) => {
       // OFFICIAL: Import and create cursor with await (DOCUMENTED)
       const { createCursor } = await import('ghost-cursor-playwright');
       cursor = await createCursor(page); // ✅ OFFICIAL: Requires await
-      
+
       // OFFICIAL: Test cursor functionality
       if (cursor && typeof cursor.click === 'function') {
         console.log("✅ Ghost cursor initialized successfully");
@@ -988,7 +988,7 @@ router.post("/test-script", async (req, res) => {
       }
     } catch (error) {
       console.log("⚠️ Ghost cursor failed, creating fallback:", error.message);
-      
+
       // OFFICIAL FALLBACK: Use Playwright's documented mouse API
       cursor = {
         click: async (element) => {
@@ -1019,7 +1019,7 @@ router.post("/test-script", async (req, res) => {
     // Test AI service before starting automation
     console.log('🧪 Testing AI service connection...');
     const aiWorking = await AIReplyService.testConnection();
-    
+
     if (aiWorking) {
       console.log('✅ AI service is working correctly');
       broadcastToClients({
@@ -1181,16 +1181,16 @@ async function waitForLoginCompletionVerified(page: Page, liveViewUrl: string) {
     } catch (error: any) {
       consecutiveErrors++;
       console.log(`⚠️ Login check error (${consecutiveErrors}/3):`, error.message);
-      
+
       // If we have too many consecutive errors, the page context might be destroyed
       if (consecutiveErrors >= 3) {
         console.log("❌ Too many consecutive errors, assuming page context destroyed");
-        
+
         // Try to recover by checking if we can still access the page
         try {
           const recoveryUrl = await page.url();
           console.log(`🔄 Recovery check - URL: ${recoveryUrl}`);
-          
+
           // If we can get the URL and it looks authenticated, consider it successful
           if (recoveryUrl.includes('/home') || recoveryUrl.includes('/following') || 
               (recoveryUrl.includes('x.com') && !recoveryUrl.includes('/login') && !recoveryUrl.includes('/flow'))) {
@@ -1200,7 +1200,7 @@ async function waitForLoginCompletionVerified(page: Page, liveViewUrl: string) {
         } catch (recoveryError) {
           console.log("❌ Recovery failed:", recoveryError.message);
         }
-        
+
         // Reset counter and continue
         consecutiveErrors = 0;
       }
@@ -1280,7 +1280,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     });
 
     console.log("👆 Looking for Following tab...");
-    
+
     // Try multiple selectors for Following tab
     const followingSelectors = [
       'a[href="/following"]',
@@ -1335,7 +1335,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     });
 
     console.log("🔍 Looking for posts...");
-    
+
     // Try multiple selectors for posts
     const postSelectors = [
       'article[data-testid="tweet"]',
@@ -1398,7 +1398,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     });
 
     console.log("❤️ Looking for like button...");
-    
+
     const likeSelectors = [
       '[data-testid="like"]',
       'button[aria-label*="like"]',
@@ -1435,7 +1435,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 
     // Step 9: Look for reply button
     console.log("💬 Looking for reply button...");
-    
+
     const replySelectors = [
       '[data-testid="reply"]',
       'button[aria-label*="reply"]',
@@ -1469,7 +1469,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       });
 
       console.log("📝 Looking for comment box...");
-      
+
       const commentSelectors = [
         '[data-testid="tweetTextarea_0"]',
         'div[contenteditable="true"]',
@@ -1496,22 +1496,22 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 
         // OFFICIAL: AI-powered reply generation
         console.log("🤖 Generating AI-powered reply...");
-        
+
         // Extract the post content first
         const postContent = await extractPostContent(page);
         console.log('📄 Extracted post content for AI:', postContent.substring(0, 100) + '...');
-        
+
         // Add thinking delay (human-like behavior)
         const thinkingDelay = 2000 + Math.random() * 3000; // 2-5 seconds
         console.log(`🤔 Thinking for ${Math.round(thinkingDelay/1000)}s before replying...`);
         await page.waitForTimeout(thinkingDelay);
-        
+
         // Generate AI reply based on post content
         let replyText;
         try {
           replyText = await AIReplyService.generateReply(postContent, 'conversational');
           console.log('✅ AI Generated Reply:', replyText);
-          
+
           broadcastToClients({
             type: 'automation_progress',
             message: `AI generated reply: "${replyText.substring(0, 50)}..."`,
@@ -1521,11 +1521,11 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
         } catch (aiError: any) {
           console.log('⚠️ AI generation failed, using fallback:', aiError.message);
           replyText = "Interesting perspective! Thanks for sharing this. 👍";
-          
+
           broadcastToClients({
             type: 'automation_progress',
-            message: 'AI unavailable, using fallback reply',
-            step: 'ai_fallback_used',
+            message: 'AI service unavailable, using fallback reply',
+            step: 'ai_service_fallback',
             liveViewUrl: liveViewUrl
           });
         }
@@ -1569,13 +1569,13 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
           try {
             // OFFICIAL: Check if button is enabled using Playwright's isEnabled()
             buttonEnabled = await submitButton.isEnabled();
-            
+
             if (buttonEnabled) {
               console.log("✅ Reply button is now enabled!");
               break;
             } else {
               console.log(`⏳ Button still disabled, attempt ${attempts + 1}/${maxAttempts}`);
-              
+
               // Try triggering content validation
               if (attempts === 5) {
                 // Add a space and remove it to trigger validation
@@ -1584,7 +1584,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
                 await page.waitForTimeout(100);
                 await page.keyboard.press('Backspace');
               }
-              
+
               await page.waitForTimeout(2000);
               attempts++;
             }
@@ -1598,25 +1598,25 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
         if (!buttonEnabled) {
           // OFFICIAL: Try alternative submit button selectors
           console.log("⚠️ Primary button still disabled, trying alternatives...");
-          
+
           const alternativeSelectors = [
             '[data-testid="tweetButton"]',
             'button[type="submit"]',
             '[role="button"]:has-text("Reply")',
             'button:has-text("Reply")'
           ];
-          
+
           for (const selector of alternativeSelectors) {
             try {
               const altButton = page.locator(selector);
               await altButton.waitFor({ state: 'visible', timeout: 3000 });
-              
+
               const isEnabled = await altButton.isEnabled();
               if (isEnabled) {
                 console.log(`✅ Found enabled alternative button: ${selector}`);
                 await cursor.click(altButton);
                 await page.waitForTimeout(2000);
-                
+
                 // Human-like browsing simulation AFTER successful reply
                 console.log("✅ Reply completed! Now browsing YouTube like a human...");
 
@@ -1632,16 +1632,51 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 
                 broadcastToClients({
                   type: 'automation_progress',
-                  message: 'Returned from YouTube browsing. Automation cycle complete!',
+                  message: 'Returned from YouTube browsing. Starting follow automation...',
                   step: 'youtube_complete',
                   liveViewUrl: liveViewUrl
                 });
-                
+
+                // NEW: Follow automation phase AFTER YouTube
+                console.log('👥 Starting follow automation phase...');
+
+                // Add human-like delay before follow automation
+                await page.waitForTimeout(3000 + Math.random() * 3000);
+
+                // Execute follow automation
+                const followSuccess = await performFollowAutomation(page, sessionId, liveViewUrl);
+
+                if (followSuccess) {
+                  broadcastToClients({
+                    type: 'automation_progress',
+                    message: 'Follow automation completed successfully!',
+                    step: 'follow_automation_complete',
+                    liveViewUrl: liveViewUrl
+                  });
+                } else {
+                  broadcastToClients({
+                    type: 'automation_progress',
+                    message: 'Follow automation skipped, continuing...',
+                    step: 'follow_automation_skipped',
+                    liveViewUrl: liveViewUrl
+                  });
+                }
+
+                // Final automation cycle complete
                 broadcastToClients({
                   type: 'automation_complete',
-                  message: 'Reply submitted successfully with alternative button!',
+                  message: 'Complete automation cycle finished! Session remains active.',
                   sessionId: sessionId,
-                  liveViewUrl: liveViewUrl
+                  liveViewUrl: liveViewUrl,
+                  summary: {
+                    login: '✅ Login completed',
+                    navigation: '✅ Navigated to Following feed',
+                    interaction: '✅ Opened and read first post',
+                    engagement: '✅ Liked post and replied',
+                    browsing: '✅ YouTube browsing simulation',
+                    followAutomation: '✅ Follow automation and profile engagement',
+                    completion: '✅ Extended cycle complete - session active'
+                  }
                 });
                 return; // Exit function if successful
               }
@@ -1649,7 +1684,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
               console.log(`⚠️ Alternative ${selector} not found or disabled`);
             }
           }
-          
+
           throw new Error("All reply buttons are disabled - content may not meet Twitter requirements");
         }
 
@@ -1664,7 +1699,7 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
           const modalStillOpen = await page.locator('[data-testid="tweetTextarea_0"]').isVisible();
           if (!modalStillOpen) {
             console.log("✅ Reply submitted successfully - modal closed");
-            
+
             // Human-like browsing simulation AFTER successful reply
             console.log("✅ Reply completed! Now browsing YouTube like a human...");
 
@@ -1687,13 +1722,13 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 
             // NEW: Follow automation phase AFTER YouTube
             console.log('👥 Starting follow automation phase...');
-            
+
             // Add human-like delay before follow automation
             await page.waitForTimeout(3000 + Math.random() * 3000);
-            
+
             // Execute follow automation
             const followSuccess = await performFollowAutomation(page, sessionId, liveViewUrl);
-            
+
             if (followSuccess) {
               broadcastToClients({
                 type: 'automation_progress',
@@ -1712,14 +1747,23 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
 
             // Final automation cycle complete
             broadcastToClients({
-              type: 'automation_progress',
+              type: 'automation_complete',
               message: 'Complete automation cycle finished! Session remains active.',
-              step: 'full_cycle_complete',
-              liveViewUrl: liveViewUrl
+              sessionId: sessionId,
+              liveViewUrl: liveViewUrl,
+              summary: {
+                login: '✅ Login completed',
+                navigation: '✅ Navigated to Following feed',
+                interaction: '✅ Opened and read first post',
+                engagement: '✅ Liked post and replied',
+                browsing: '✅ YouTube browsing simulation',
+                followAutomation: '✅ Follow automation and profile engagement',
+                completion: '✅ Extended cycle complete - session active'
+              }
             });
           } else {
             console.log("⚠️ Modal still open - checking for error messages");
-            
+
             // Look for error messages
             const errorMessage = await page.locator('[role="alert"]').textContent().catch(() => null);
             if (errorMessage) {
@@ -1772,11 +1816,11 @@ async function validateReplyContent(page: Page, commentBox: any, originalReply?:
     // Get current text content
     const currentText = await commentBox.inputValue();
     console.log(`📝 Current text: "${currentText}"`);
-    
+
     // Check text length (Twitter minimum is usually 1 character, but longer is better)
     if (currentText.length < 10) {
       console.log("⚠️ Text too short, enhancing AI reply...");
-      
+
       // If we have original AI reply, enhance it instead of replacing
       if (originalReply && originalReply.length > 5) {
         const enhancedReply = originalReply + " 👍";
@@ -1791,12 +1835,12 @@ async function validateReplyContent(page: Page, commentBox: any, originalReply?:
       }
       await page.waitForTimeout(1000);
     }
-    
+
     // Trigger content validation by simulating user behavior
     await commentBox.focus();
     await page.keyboard.press('End');
     await page.waitForTimeout(500);
-    
+
     return true;
   } catch (error) {
     console.log("⚠️ Content validation error:", error.message);
@@ -1808,7 +1852,7 @@ async function validateReplyContent(page: Page, commentBox: any, originalReply?:
 async function extractPostContent(page: Page): Promise<string> {
   try {
     console.log('📝 Extracting post content...');
-    
+
     // Multiple selectors for robust text extraction (official Playwright methods)
     const postSelectors = [
       '[data-testid="tweetText"]',           // Primary tweet text
@@ -1817,21 +1861,21 @@ async function extractPostContent(page: Page): Promise<string> {
       '[data-testid="tweet"] span',         // Fallback spans
       'article div[lang]'                   // Alternative language div
     ];
-    
+
     let extractedText = '';
-    
+
     // Try each selector until we find content
     for (const selector of postSelectors) {
       try {
         // Use official Playwright locator method
         const elements = page.locator(selector);
         const count = await elements.count();
-        
+
         if (count > 0) {
           // Extract text using official textContent method
           const texts = await elements.allTextContents();
           const combinedText = texts.join(' ').trim();
-          
+
           if (combinedText.length > 10) { // Ensure meaningful content
             extractedText = combinedText;
             console.log(`✅ Content extracted using selector: ${selector}`);
@@ -1843,24 +1887,24 @@ async function extractPostContent(page: Page): Promise<string> {
         continue;
       }
     }
-    
+
     // Clean and validate extracted text
     if (extractedText.length > 0) {
       // Remove extra whitespace and clean up
       extractedText = extractedText.replace(/\s+/g, ' ').trim();
-      
+
       // Limit length for AI processing (Gemini works best with reasonable input)
       if (extractedText.length > 500) {
         extractedText = extractedText.substring(0, 497) + '...';
       }
-      
+
       console.log('📄 Extracted post content:', extractedText.substring(0, 100) + '...');
       return extractedText;
     } else {
       console.log('⚠️ No post content found, using fallback');
       return 'Interesting post! Thanks for sharing.';
     }
-    
+
   } catch (error: any) {
     console.error('❌ Post content extraction failed:', error.message);
     return 'Great post! Thanks for sharing this.';
@@ -1924,7 +1968,7 @@ async function checkIfLoginNeeded(page: Page) {
       - Final result: Login ${loginNeeded ? 'NEEDED' : 'NOT NEEDED'}`);
 
     return loginNeeded;
-  } catch (error) {
+  } catch (error): any) {
     console.log("⚠️ Login check failed, assuming login needed:", error);
     return true; // Assume login needed if check fails
   }
@@ -1934,41 +1978,41 @@ async function checkIfLoginNeeded(page: Page) {
 async function openYouTubeAndScroll(page: Page, sessionId: string) {
   try {
     console.log("🎥 Opening YouTube in new tab for human-like browsing...");
-    
+
     // Get the browser context from the current page
     const context = page.context();
-    
+
     // Create new page (tab) in same context
     const youtubeTab = await context.newPage();
     console.log("✅ New YouTube tab created");
-    
+
     // Navigate to YouTube with proper wait
     await youtubeTab.goto('https://www.youtube.com', {
       waitUntil: 'networkidle',
       timeout: 30000
     });
     console.log("✅ YouTube loaded");
-    
+
     // CRITICAL: Get live view URLs for all tabs after YouTube opens
     try {
       const browserbase = new Browserbase({
         apiKey: process.env.BROWSERBASE_API_KEY!,
       });
-      
+
       // Get all tab live view URLs
       const liveViewLinks = await browserbase.sessions.debug(sessionId);
       const allTabs = liveViewLinks.pages;
-      
+
       console.log(`📺 Found ${allTabs.length} tabs with live view URLs`);
-      
+
       // Find YouTube tab (should be the newest one)
       const youtubeTabLiveView = allTabs.find(tab => 
         tab.url && tab.url.includes('youtube.com')
       );
-      
+
       if (youtubeTabLiveView) {
         console.log(`🎥 YouTube tab live view URL: ${youtubeTabLiveView.debuggerFullscreenUrl}`);
-        
+
         // Broadcast YouTube tab live view URL for secondary iframe
         broadcastToClients({
           type: 'secondary_tab_opened',
@@ -1986,51 +2030,51 @@ async function openYouTubeAndScroll(page: Page, sessionId: string) {
     } catch (liveViewError) {
       console.log("⚠️ Could not get YouTube tab live view URL:", liveViewError.message);
     }
-    
+
     // Wait for page to fully load
     await youtubeTab.waitForTimeout(2000 + Math.random() * 3000);
-    
+
     // Human-like scrolling pattern (1600px total in chunks)
     const scrollSteps = 4; // 400px per step
     const scrollAmount = 400;
-    
+
     for (let i = 0; i < scrollSteps; i++) {
       console.log(`📜 Scrolling step ${i + 1}/${scrollSteps}`);
-      
+
       // Use mouse.wheel() for natural scrolling
       await youtubeTab.mouse.wheel(0, scrollAmount);
-      
+
       // Human-like pause between scrolls (1-3 seconds)
       const pauseTime = 1000 + Math.random() * 2000;
       await youtubeTab.waitForTimeout(pauseTime);
     }
-    
+
     // Browse YouTube for 5-10 seconds (realistic human behavior)
     const browsingTime = 5000 + Math.random() * 5000;
     console.log(`👀 Browsing YouTube for ${Math.round(browsingTime/1000)}s...`);
     await youtubeTab.waitForTimeout(browsingTime);
-    
+
     // Notify before closing
     broadcastToClients({
       type: 'secondary_tab_closing',
       tabType: 'youtube',
       message: 'Closing YouTube tab, returning to X...'
     });
-    
+
     // Close the YouTube tab
     await youtubeTab.close();
     console.log("✅ YouTube tab closed, returning to X");
-    
+
     // Notify that secondary tab is closed
     broadcastToClients({
       type: 'secondary_tab_closed',
       tabType: 'youtube',
       message: 'YouTube tab closed - secondary view hidden'
     });
-    
+
     // Small delay before continuing
     await page.waitForTimeout(1000 + Math.random() * 2000);
-    
+
   } catch (error: any) {
     console.error("❌ YouTube tab error:", error.message);
     // Don't throw - continue automation even if YouTube fails
@@ -2041,7 +2085,7 @@ async function openYouTubeAndScroll(page: Page, sessionId: string) {
 async function performFollowAutomation(page: Page, sessionId: string, liveViewUrl: string) {
   try {
     console.log('👥 Starting follow automation...');
-    
+
     broadcastToClients({
       type: 'automation_progress',
       message: 'Starting follow automation - looking for recommendations...',
@@ -2051,7 +2095,7 @@ async function performFollowAutomation(page: Page, sessionId: string, liveViewUr
 
     // Step 1: Look for "Who to follow" recommendations
     console.log('🔍 Looking for "Who to follow" recommendations...');
-    
+
     const whoToFollowSelectors = [
       '[data-testid*="follow"]',
       'div[aria-label*="Follow"]',
@@ -2059,28 +2103,28 @@ async function performFollowAutomation(page: Page, sessionId: string, liveViewUr
       'div:has-text("Who to follow")',
       'aside div:has-text("Follow")'
     ];
-    
+
     let followRecommendations = [];
-    
+
     // Try to find follow recommendations
     for (const selector of whoToFollowSelectors) {
       try {
         const elements = page.locator(selector);
         const count = await elements.count();
-        
+
         if (count > 0) {
           console.log(`✅ Found ${count} follow elements with selector: ${selector}`);
-          
+
           for (let i = 0; i < Math.min(count, 10); i++) {
             const element = elements.nth(i);
             const isVisible = await element.isVisible();
             const text = await element.textContent().catch(() => '');
-            
+
             if (isVisible && text && text.toLowerCase().includes('follow') && !text.toLowerCase().includes('following')) {
               followRecommendations.push(element);
             }
           }
-          
+
           if (followRecommendations.length > 0) {
             console.log(`🎯 Found ${followRecommendations.length} follow recommendations`);
             break;
@@ -2091,59 +2135,59 @@ async function performFollowAutomation(page: Page, sessionId: string, liveViewUr
         continue;
       }
     }
-    
+
     // If no recommendations found, try scrolling
     if (followRecommendations.length === 0) {
       console.log('📜 Scrolling to find follow recommendations...');
-      
+
       for (let scroll = 0; scroll < 3; scroll++) {
         await page.mouse.wheel(0, 800);
         await page.waitForTimeout(2000);
-        
+
         const scrollElements = page.locator('[data-testid*="follow"]');
         const scrollCount = await scrollElements.count();
-        
+
         if (scrollCount > 0) {
           for (let i = 0; i < Math.min(scrollCount, 5); i++) {
             const element = scrollElements.nth(i);
             const isVisible = await element.isVisible();
             const text = await element.textContent().catch(() => '');
-            
+
             if (isVisible && text && text.toLowerCase().includes('follow') && !text.toLowerCase().includes('following')) {
               followRecommendations.push(element);
             }
           }
         }
-        
+
         if (followRecommendations.length > 0) break;
       }
     }
-    
+
     if (followRecommendations.length === 0) {
       console.log('⚠️ No follow recommendations found, skipping follow automation');
       return false;
     }
-    
+
     // Step 2: Select random recommendation and follow
     const randomIndex = Math.floor(Math.random() * followRecommendations.length);
     const selectedFollowButton = followRecommendations[randomIndex];
-    
+
     console.log(`🎲 Selected random recommendation ${randomIndex + 1} of ${followRecommendations.length}`);
-    
+
     broadcastToClients({
       type: 'automation_progress',
       message: `Found ${followRecommendations.length} recommendations, following random account...`,
       step: 'following_account',
       liveViewUrl: liveViewUrl
     });
-    
+
     // Get username before clicking follow
     let username = '';
     try {
       const parentElement = selectedFollowButton.locator('xpath=ancestor::div[contains(@data-testid, "UserCell") or contains(@class, "user")]').first();
       const usernameElement = parentElement.locator('[data-testid="UserName"], [data-testid="UserHandle"], a[href*="/"]').first();
       const usernameText = await usernameElement.textContent().catch(() => '');
-      
+
       if (usernameText && usernameText.includes('@')) {
         username = usernameText.replace('@', '').trim();
       } else if (usernameText) {
@@ -2155,10 +2199,10 @@ async function performFollowAutomation(page: Page, sessionId: string, liveViewUr
     } catch (usernameError) {
       console.log('⚠️ Could not extract username, will try alternative method');
     }
-    
+
     // Click follow button with human-like behavior
     await page.waitForTimeout(1000 + Math.random() * 2000);
-    
+
     try {
       const { createCursor } = await import('ghost-cursor-playwright');
       const cursor = await createCursor(page);
@@ -2166,17 +2210,17 @@ async function performFollowAutomation(page: Page, sessionId: string, liveViewUr
     } catch (cursorError) {
       await selectedFollowButton.click();
     }
-    
+
     console.log('✅ Follow button clicked');
     await page.waitForTimeout(2000 + Math.random() * 2000);
-    
+
     // Step 3: Navigate to user's profile
     if (!username) {
       console.log('⚠️ Username not found, trying to find profile link...');
-      
+
       const profileLinks = page.locator('a[href*="/"][href$="' + username + '"], a[href*="twitter.com/"], a[href*="x.com/"]');
       const linkCount = await profileLinks.count();
-      
+
       if (linkCount > 0) {
         const profileLink = profileLinks.first();
         const href = await profileLink.getAttribute('href');
@@ -2185,41 +2229,41 @@ async function performFollowAutomation(page: Page, sessionId: string, liveViewUr
         }
       }
     }
-    
+
     if (username) {
       console.log(`👤 Navigating to profile: @${username}`);
-      
+
       broadcastToClients({
         type: 'automation_progress',
         message: `Following @${username}, navigating to their profile...`,
         step: 'navigating_to_profile',
         liveViewUrl: liveViewUrl
       });
-      
+
       const profileUrl = `https://x.com/${username}`;
       await page.goto(profileUrl, { waitUntil: 'networkidle', timeout: 30000 });
       await page.waitForTimeout(3000 + Math.random() * 2000);
-      
+
       console.log('✅ Profile loaded successfully');
-      
+
       // Step 4: Engage with second post
       return await engageWithSecondPost(page, sessionId, liveViewUrl, username);
-      
+
     } else {
       console.log('❌ Could not determine username for profile navigation');
       return false;
     }
-    
+
   } catch (error: any) {
     console.error('❌ Follow automation failed:', error.message);
-    
+
     broadcastToClients({
       type: 'automation_progress',
       message: 'Follow automation encountered an error, continuing...',
       step: 'follow_automation_error',
       liveViewUrl: liveViewUrl
     });
-    
+
     return false;
   }
 }
@@ -2228,16 +2272,16 @@ async function performFollowAutomation(page: Page, sessionId: string, liveViewUr
 async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: string, username: string) {
   try {
     console.log(`📱 Looking for posts on @${username}'s profile...`);
-    
+
     broadcastToClients({
       type: 'automation_progress',
       message: `Analyzing @${username}'s posts, looking for second post...`,
       step: 'analyzing_posts',
       liveViewUrl: liveViewUrl
     });
-    
+
     await page.waitForTimeout(3000);
-    
+
     const postSelectors = [
       '[data-testid="tweet"]',
       'article[data-testid="tweet"]',
@@ -2245,27 +2289,27 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
       'article[role="article"]',
       'div[aria-label*="tweet"]'
     ];
-    
+
     let posts = [];
-    
+
     // Find all posts on the profile
     for (const selector of postSelectors) {
       try {
         const elements = page.locator(selector);
         const count = await elements.count();
-        
+
         if (count > 0) {
           console.log(`📄 Found ${count} posts with selector: ${selector}`);
-          
+
           for (let i = 0; i < Math.min(count, 10); i++) {
             const post = elements.nth(i);
             const isVisible = await post.isVisible();
-            
+
             if (isVisible) {
               posts.push(post);
             }
           }
-          
+
           if (posts.length >= 2) {
             console.log(`✅ Found ${posts.length} posts, proceeding with engagement`);
             break;
@@ -2276,16 +2320,16 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
         continue;
       }
     }
-    
+
     if (posts.length < 2) {
       console.log('⚠️ Not enough posts found, scrolling to load more...');
-      
+
       await page.mouse.wheel(0, 1000);
       await page.waitForTimeout(3000);
-      
+
       const scrollPosts = page.locator('[data-testid="tweet"]');
       const scrollCount = await scrollPosts.count();
-      
+
       posts = [];
       for (let i = 0; i < Math.min(scrollCount, 10); i++) {
         const post = scrollPosts.nth(i);
@@ -2295,41 +2339,41 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
         }
       }
     }
-    
+
     if (posts.length < 2) {
       console.log('❌ Could not find enough posts to engage with');
       return false;
     }
-    
+
     // Select the second post (index 1, skipping potential pinned post)
     const secondPost = posts[1];
-    
+
     console.log('🎯 Targeting second post for engagement...');
-    
+
     broadcastToClients({
       type: 'automation_progress',
       message: 'Found second post, scrolling to view and engaging...',
       step: 'engaging_second_post',
       liveViewUrl: liveViewUrl
     });
-    
+
     // Scroll to the second post
     await secondPost.scrollIntoViewIfNeeded();
     await page.waitForTimeout(2000 + Math.random() * 2000);
-    
+
     // Extract post content for AI reply
     const postContent = await extractPostContentFromElement(secondPost);
-    
+
     // Step 1: Like the second post
     console.log('❤️ Liking the second post...');
-    
+
     const likeSelectors = [
       '[data-testid="like"]',
       '[aria-label*="Like"]',
       'button[aria-label*="like"]',
       '[data-testid="tweet"] button[aria-label*="Like"]'
     ];
-    
+
     let likeButton = null;
     for (const selector of likeSelectors) {
       try {
@@ -2344,7 +2388,7 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
         continue;
       }
     }
-    
+
     if (likeButton) {
       try {
         const { createCursor } = await import('ghost-cursor-playwright');
@@ -2353,23 +2397,23 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
       } catch (cursorError) {
         await likeButton.click();
       }
-      
+
       console.log('✅ Second post liked successfully');
       await page.waitForTimeout(2000 + Math.random() * 2000);
     } else {
       console.log('⚠️ Like button not found on second post');
     }
-    
+
     // Step 2: Reply to the second post
     console.log('💬 Opening reply dialog for second post...');
-    
+
     const replySelectors = [
       '[data-testid="reply"]',
       '[aria-label*="Reply"]',
       'button[aria-label*="reply"]',
       '[data-testid="tweet"] button[aria-label*="Reply"]'
     ];
-    
+
     let replyButton = null;
     for (const selector of replySelectors) {
       try {
@@ -2384,7 +2428,7 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
         continue;
       }
     }
-    
+
     if (replyButton) {
       try {
         const { createCursor } = await import('ghost-cursor-playwright');
@@ -2393,22 +2437,22 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
       } catch (cursorError) {
         await replyButton.click();
       }
-      
+
       console.log('✅ Reply dialog opened');
       await page.waitForTimeout(2000 + Math.random() * 2000);
-      
+
       // Generate AI reply for the second post
       console.log('🤖 Generating AI reply for second post...');
-      
+
       const thinkingDelay = 2000 + Math.random() * 3000;
       console.log(`🤔 Thinking for ${Math.round(thinkingDelay/1000)}s before replying...`);
       await page.waitForTimeout(thinkingDelay);
-      
+
       let replyText;
       try {
         replyText = await AIReplyService.generateReply(postContent, 'supportive');
         console.log('✅ AI Generated Reply for profile post:', replyText);
-        
+
         broadcastToClients({
           type: 'automation_progress',
           message: `AI generated reply for @${username}'s post: "${replyText.substring(0, 50)}..."`,
@@ -2418,7 +2462,7 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
       } catch (aiError: any) {
         console.log('⚠️ AI generation failed, using fallback:', aiError.message);
         replyText = "Great content! Thanks for sharing your insights. 👍";
-        
+
         broadcastToClients({
           type: 'automation_progress',
           message: 'AI unavailable, using fallback reply for profile post',
@@ -2426,7 +2470,7 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
           liveViewUrl: liveViewUrl
         });
       }
-      
+
       // Find and fill the reply text area
       const commentSelectors = [
         '[data-testid="tweetTextarea_0"]',
@@ -2434,7 +2478,7 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
         '[role="textbox"]',
         'div[contenteditable="true"]'
       ];
-      
+
       let commentBox = null;
       for (const selector of commentSelectors) {
         try {
@@ -2449,21 +2493,21 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
           continue;
         }
       }
-      
+
       if (commentBox) {
         await commentBox.first().focus();
         await page.waitForTimeout(500);
-        
+
         await page.keyboard.press('Control+a');
         await page.waitForTimeout(100);
         await page.keyboard.press('Delete');
         await page.waitForTimeout(300);
-        
+
         // Type with human-like patterns
         await typeWithHumanBehavior(page, replyText);
-        
+
         await page.waitForTimeout(2000);
-        
+
         // Submit the reply
         const submitSelectors = [
           '[data-testid="tweetButtonInline"]',
@@ -2471,7 +2515,7 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
           '[role="button"]:has-text("Reply")',
           'button:has-text("Post")'
         ];
-        
+
         let submitButton = null;
         for (const selector of submitSelectors) {
           try {
@@ -2487,10 +2531,10 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
             continue;
           }
         }
-        
+
         if (submitButton) {
           console.log('📤 Submitting reply to second post...');
-          
+
           try {
             const { createCursor } = await import('ghost-cursor-playwright');
             const cursor = await createCursor(page);
@@ -2498,18 +2542,18 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
           } catch (cursorError) {
             await submitButton.click();
           }
-          
+
           await page.waitForTimeout(3000);
-          
+
           console.log('✅ Reply submitted successfully to second post');
-          
+
           broadcastToClients({
             type: 'automation_progress',
             message: `Successfully replied to @${username}'s post!`,
             step: 'profile_reply_complete',
             liveViewUrl: liveViewUrl
           });
-          
+
           return true;
         } else {
           console.log('❌ Submit button not found or not enabled');
@@ -2523,7 +2567,7 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
       console.log('⚠️ Reply button not found on second post');
       return false;
     }
-    
+
   } catch (error: any) {
     console.error('❌ Second post engagement failed:', error.message);
     return false;
@@ -2534,25 +2578,25 @@ async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: 
 async function extractPostContentFromElement(postElement: any): Promise<string> {
   try {
     console.log('📝 Extracting post content from specific post...');
-    
+
     const postSelectors = [
       '[data-testid="tweetText"]',
       '[lang]',
       '[dir="auto"]',
       'span'
     ];
-    
+
     let extractedText = '';
-    
+
     for (const selector of postSelectors) {
       try {
         const elements = postElement.locator(selector);
         const count = await elements.count();
-        
+
         if (count > 0) {
           const texts = await elements.allTextContents();
           const combinedText = texts.join(' ').trim();
-          
+
           if (combinedText.length > 10) {
             extractedText = combinedText;
             console.log(`✅ Content extracted using selector: ${selector}`);
@@ -2563,25 +2607,26 @@ async function extractPostContentFromElement(postElement: any): Promise<string> 
         continue;
       }
     }
-    
+
     if (extractedText.length > 0) {
       extractedText = extractedText.replace(/\s+/g, ' ').trim();
-      
+
       if (extractedText.length > 500) {
         extractedText = extractedText.substring(0, 497) + '...';
       }
-      
+
       console.log('📄 Extracted post content:', extractedText.substring(0, 100) + '...');
       return extractedText;
     } else {
       console.log('⚠️ No post content found, using fallback');
       return 'Interesting post! Thanks for sharing.';
     }
-    
+
   } catch (error: any) {
     console.error('❌ Post content extraction failed:', error.message);
     return 'Great post! Thanks for sharing this.';
   }
 }
 
+// This code adds follow automation after YouTube browsing in the X/Twitter automation script.
 export default router;
