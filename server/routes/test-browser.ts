@@ -840,6 +840,9 @@ async function typeWithHumanBehavior(page: Page, text: string) {
   try {
     console.log(`🎯 Typing "${text}" with human-like behavior...`);
     
+    // Track if we've already made a typo (limit to 1 per text)
+    let typoMade = false;
+    
     for (let i = 0; i < text.length; i++) {
       const char = text[i];
       
@@ -850,9 +853,10 @@ async function typeWithHumanBehavior(page: Page, text: string) {
         await page.waitForTimeout(thinkingDelay);
       }
       
-      // 2. Occasional typo simulation (5% chance)
-      if (Math.random() < 0.05 && i > 2) {
-        console.log('❌ Making a typo...');
+      // 2. Occasional typo simulation (only once per text, 3% chance, after 25% of text)
+      if (!typoMade && Math.random() < 0.03 && i > Math.floor(text.length * 0.25)) {
+        console.log('❌ Making a single typo...');
+        typoMade = true; // Mark that we've made our one typo
         
         // Type a wrong character first
         const wrongChars = 'qwertyuiopasdfghjklzxcvbnm';
@@ -869,8 +873,8 @@ async function typeWithHumanBehavior(page: Page, text: string) {
         console.log('🔙 Correcting typo...');
       }
       
-      // 3. Random backspace and retype (3% chance, but not on first few chars)
-      if (Math.random() < 0.03 && i > 5) {
+      // 3. Random backspace and retype (2% chance, but not on first few chars)
+      if (Math.random() < 0.02 && i > 5) {
         console.log('🔄 Deleting and retyping...');
         
         // Delete 2-4 previous characters
