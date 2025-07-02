@@ -1654,7 +1654,7 @@ async function checkIfLoginNeeded(page: Page) {
   }
 }
 
-// Human-like YouTube browsing simulation
+// Human-like YouTube browsing simulation with live view URL
 async function openYouTubeAndScroll(page: Page, sessionId: string) {
   try {
     console.log("🎥 Opening YouTube in new tab for human-like browsing...");
@@ -1672,6 +1672,42 @@ async function openYouTubeAndScroll(page: Page, sessionId: string) {
       timeout: 30000
     });
     console.log("✅ YouTube loaded");
+    
+    // CRITICAL: Get live view URLs for all tabs after YouTube opens
+    try {
+      const browserbase = new Browserbase({
+        apiKey: process.env.BROWSERBASE_API_KEY!,
+      });
+      
+      // Get all tab live view URLs
+      const liveViewLinks = await browserbase.sessions.debug(sessionId);
+      const allTabs = liveViewLinks.pages;
+      
+      console.log(`📺 Found ${allTabs.length} tabs with live view URLs`);
+      
+      // Find YouTube tab (should be the newest one)
+      const youtubeTabLiveView = allTabs.find(tab => 
+        tab.url && tab.url.includes('youtube.com')
+      );
+      
+      if (youtubeTabLiveView) {
+        console.log(`🎥 YouTube tab live view URL: ${youtubeTabLiveView.debuggerFullscreenUrl}`);
+        
+        // Broadcast YouTube tab live view URL
+        broadcastToClients({
+          type: 'youtube_tab_opened',
+          message: 'YouTube tab opened - you can now see it!',
+          youtubeTabUrl: youtubeTabLiveView.debuggerFullscreenUrl,
+          allTabs: allTabs.map(tab => ({
+            title: tab.title,
+            url: tab.url,
+            liveViewUrl: tab.debuggerFullscreenUrl
+          }))
+        });
+      }
+    } catch (liveViewError) {
+      console.log("⚠️ Could not get YouTube tab live view URL:", liveViewError.message);
+    }
     
     // Wait for page to fully load
     await youtubeTab.waitForTimeout(2000 + Math.random() * 3000);
@@ -1695,6 +1731,12 @@ async function openYouTubeAndScroll(page: Page, sessionId: string) {
     const browsingTime = 5000 + Math.random() * 5000;
     console.log(`👀 Browsing YouTube for ${Math.round(browsingTime/1000)}s...`);
     await youtubeTab.waitForTimeout(browsingTime);
+    
+    // Notify before closing
+    broadcastToClients({
+      type: 'youtube_tab_closing',
+      message: 'Closing YouTube tab, returning to X...'
+    });
     
     // Close the YouTube tab
     await youtubeTab.close();

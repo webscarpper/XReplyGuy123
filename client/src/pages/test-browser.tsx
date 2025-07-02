@@ -46,7 +46,7 @@ export default function TestBrowser() {
   const [wsConnected, setWsConnected] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [sessionTimeRemaining, setSessionTimeRemaining] = useState<string>("");
-  
+
   // Automation state
   const [automation, setAutomation] = useState<AutomationState>({
     running: false,
@@ -58,7 +58,7 @@ export default function TestBrowser() {
   });
   const [twitterUsername, setTwitterUsername] = useState("");
   const [twitterPassword, setTwitterPassword] = useState("");
-  
+
   // Test Script state
   const [isTestScriptRunning, setIsTestScriptRunning] = useState(false);
   const [automationStatus, setAutomationStatus] = useState<string>('');
@@ -78,12 +78,12 @@ export default function TestBrowser() {
       },
       ...options,
     });
-    
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Request failed' }));
       throw new Error(error.message || `HTTP ${response.status}`);
     }
-    
+
     return response.json();
   };
 
@@ -92,18 +92,18 @@ export default function TestBrowser() {
     const connectWebSocket = () => {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const wsUrl = `${protocol}//${window.location.host}/ws/browser`;
-      
+
       const websocket = new WebSocket(wsUrl);
-      
+
       websocket.onopen = () => {
         console.log("Browser WebSocket connected");
         setWsConnected(true);
       };
-      
+
       websocket.onmessage = (event) => {
         const data = JSON.parse(event.data);
         console.log("WebSocket message:", data);
-        
+
         switch (data.type) {
           case 'live_view_url':
             setLiveViewUrl(data.url);
@@ -120,7 +120,6 @@ export default function TestBrowser() {
             }));
             break;
           case 'automation_complete':
-            // Handle both regular automation and test script
             setAutomation(prev => ({
               ...prev,
               running: false,
@@ -134,7 +133,6 @@ export default function TestBrowser() {
             console.log('🎉 Test automation completed successfully!');
             break;
           case 'automation_error':
-            // Handle both regular automation and test script
             setAutomation(prev => ({
               ...prev,
               running: false,
@@ -165,20 +163,41 @@ export default function TestBrowser() {
               setLiveViewUrl(data.liveViewUrl);
             }
             break;
+          case 'youtube_tab_opened':
+            console.log('🎥 YouTube tab opened:', data.youtubeTabUrl);
+            console.log('📺 All tabs:', data.allTabs);
+
+            // Show YouTube URL in console for manual viewing
+            console.log('YouTube Live View URL:', data.youtubeTabUrl);
+
+            // Update status to show YouTube tab is available
+            setAutomation(prev => ({
+              ...prev,
+              message: `${data.message} - Copy YouTube URL from console to view in new tab`
+            }));
+            break;
+
+          case 'youtube_tab_closing':
+            console.log('🔄 YouTube tab closing, returning to X');
+            setAutomation(prev => ({
+              ...prev,
+              message: 'YouTube tab closing, returning to X...'
+            }));
+            break;
         }
       };
-      
+
       websocket.onclose = () => {
         console.log("Browser WebSocket disconnected");
         setWsConnected(false);
         setTimeout(connectWebSocket, 3000);
       };
-      
+
       setWs(websocket);
     };
 
     connectWebSocket();
-    
+
     return () => {
       if (ws) {
         ws.close();
@@ -189,23 +208,23 @@ export default function TestBrowser() {
   // Session timer
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    
+
     if (status.isConnected && sessionStartTime.current > 0) {
       timer = setInterval(() => {
         const elapsed = Date.now() - sessionStartTime.current;
         const remaining = Math.max(0, 3600000 - elapsed); // 1 hour in ms
-        
+
         if (remaining === 0) {
           setSessionTimeRemaining("Session expired");
           return;
         }
-        
+
         const minutes = Math.floor(remaining / 60000);
         const seconds = Math.floor((remaining % 60000) / 1000);
         setSessionTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`);
       }, 1000);
     }
-    
+
     return () => {
       if (timer) clearInterval(timer);
     };
@@ -230,11 +249,11 @@ export default function TestBrowser() {
     try {
       console.log("Connecting to Browserbase with stealth...");
       const response = await apiRequest('/test-connection', { method: 'POST' });
-      
+
       console.log("Connection response:", response);
       setStatus(response);
       sessionStartTime.current = Date.now();
-      
+
       if (response.liveViewUrl) {
         setLiveViewUrl(response.liveViewUrl);
       } else {
@@ -250,7 +269,7 @@ export default function TestBrowser() {
           }
         }, 2000);
       }
-      
+
     } catch (error: any) {
       console.error('Connection failed:', error);
       alert(`Connection failed: ${error.message}`);
@@ -264,7 +283,7 @@ export default function TestBrowser() {
       alert('Please connect first');
       return;
     }
-    
+
     setLoading(true);
     try {
       await apiRequest('/navigate', {
@@ -291,7 +310,7 @@ export default function TestBrowser() {
 
     setLoading(true);
     setAutomation(prev => ({ ...prev, running: true, status: 'starting', message: 'Starting automation...' }));
-    
+
     try {
       await apiRequest('/test-automation', {
         method: 'POST',
@@ -339,12 +358,12 @@ export default function TestBrowser() {
     try {
       setIsTestScriptRunning(true);
       setAutomationStatus('Starting automation...');
-      
+
       const response = await apiRequest('/test-script', {
         method: 'POST',
         body: JSON.stringify({})
       });
-      
+
       if (response.success) {
         if (response.status === 'manual_intervention_required') {
           setShowManualIntervention(true);
@@ -380,7 +399,7 @@ export default function TestBrowser() {
             </Button>
             <h1 className="text-2xl font-bold text-white">Browserbase Live Testing</h1>
           </div>
-          
+
           {status.isConnected && sessionTimeRemaining && (
             <Badge variant="outline" className="text-green-400 border-green-400">
               <Timer className="w-4 h-4 mr-1" />
@@ -430,7 +449,7 @@ export default function TestBrowser() {
                         Basic + CAPTCHA
                       </Badge>
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <span className="text-gray-300">Session ID:</span>
                       <span className="text-xs text-purple-400 font-mono">
