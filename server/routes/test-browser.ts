@@ -4,6 +4,7 @@ import WebSocket from "ws";
 import { Browserbase } from "@browserbasehq/sdk";
 import { chromium } from "playwright-core";
 import { Page, Browser, BrowserContext } from "playwright-core";
+import { AIReplyService } from '../services/aiService';
 // Ghost cursor will be imported dynamically with error handling
 
 const router = Router();
@@ -907,6 +908,28 @@ router.post("/test-script", async (req, res) => {
       sessionId: session.id
     });
 
+    // Test AI service before starting automation
+    console.log('🧪 Testing AI service connection...');
+    const aiWorking = await AIReplyService.testConnection();
+    
+    if (aiWorking) {
+      console.log('✅ AI service is working correctly');
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'AI service connected and ready!',
+        step: 'ai_service_ready',
+        liveViewUrl: liveViewUrl
+      });
+    } else {
+      console.log('⚠️ AI service test failed, will use fallback replies');
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'AI service unavailable, using fallback replies',
+        step: 'ai_service_fallback',
+        liveViewUrl: liveViewUrl
+      });
+    }
+
     // 6. Navigate to login (VERIFIED)
     await page.goto('https://x.com/i/flow/login', {
       waitUntil: 'domcontentloaded',
@@ -1363,15 +1386,36 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
         await cursor.click(commentBox.first());
         await page.waitForTimeout(500);
 
-        // OFFICIAL: Improved comment typing with validation
-        console.log("⌨️ Typing comment...");
+        // OFFICIAL: AI-powered reply generation
+        console.log("🤖 Generating AI-powered reply...");
+        
+        // Extract the post content first
+        const postContent = await extractPostContent(page);
+        
+        // Add thinking delay (human-like behavior)
+        const thinkingDelay = 2000 + Math.random() * 3000; // 2-5 seconds
+        console.log(`🤔 Thinking for ${Math.round(thinkingDelay/1000)}s before replying...`);
+        await page.waitForTimeout(thinkingDelay);
+        
+        // Generate AI reply based on post content
+        const replyText = await AIReplyService.generateReply(postContent, 'conversational');
+        
+        console.log('💬 AI Generated Reply:', replyText);
+        
+        broadcastToClients({
+          type: 'automation_progress',
+          message: `AI generated reply: "${replyText.substring(0, 50)}..."`,
+          step: 'ai_reply_generated',
+          liveViewUrl: liveViewUrl
+        });
+
+        console.log("⌨️ Typing AI-generated comment...");
 
         // Step 1: Ensure text area is properly focused
         await commentBox.first().focus();
         await page.waitForTimeout(500);
 
         // Step 2: Clear and type using official fill method
-        const replyText = "GM! Hope you're having a great day! 🌅 Thanks for sharing this!";
         await commentBox.first().fill(replyText); // ✅ OFFICIAL: Clears and fills in one action
 
         // Wait for Twitter's content validation
@@ -1588,6 +1632,69 @@ async function validateReplyContent(page: Page, commentBox: any) {
   } catch (error) {
     console.log("⚠️ Content validation error:", error.message);
     return false;
+  }
+}
+
+// Extract post content using robust Playwright selectors
+async function extractPostContent(page: Page): Promise<string> {
+  try {
+    console.log('📝 Extracting post content...');
+    
+    // Multiple selectors for robust text extraction (official Playwright methods)
+    const postSelectors = [
+      '[data-testid="tweetText"]',           // Primary tweet text
+      '[data-testid="tweet"] [lang]',       // Language-specific content  
+      'article [dir="auto"]',               // Auto-direction text
+      '[data-testid="tweet"] span',         // Fallback spans
+      'article div[lang]'                   // Alternative language div
+    ];
+    
+    let extractedText = '';
+    
+    // Try each selector until we find content
+    for (const selector of postSelectors) {
+      try {
+        // Use official Playwright locator method
+        const elements = page.locator(selector);
+        const count = await elements.count();
+        
+        if (count > 0) {
+          // Extract text using official textContent method
+          const texts = await elements.allTextContents();
+          const combinedText = texts.join(' ').trim();
+          
+          if (combinedText.length > 10) { // Ensure meaningful content
+            extractedText = combinedText;
+            console.log(`✅ Content extracted using selector: ${selector}`);
+            break;
+          }
+        }
+      } catch (selectorError) {
+        console.log(`⚠️ Selector ${selector} failed, trying next...`);
+        continue;
+      }
+    }
+    
+    // Clean and validate extracted text
+    if (extractedText.length > 0) {
+      // Remove extra whitespace and clean up
+      extractedText = extractedText.replace(/\s+/g, ' ').trim();
+      
+      // Limit length for AI processing (Gemini works best with reasonable input)
+      if (extractedText.length > 500) {
+        extractedText = extractedText.substring(0, 497) + '...';
+      }
+      
+      console.log('📄 Extracted post content:', extractedText.substring(0, 100) + '...');
+      return extractedText;
+    } else {
+      console.log('⚠️ No post content found, using fallback');
+      return 'Interesting post! Thanks for sharing.';
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Post content extraction failed:', error.message);
+    return 'Great post! Thanks for sharing this.';
   }
 }
 
