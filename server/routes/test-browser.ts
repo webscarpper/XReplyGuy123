@@ -390,11 +390,11 @@ router.post("/test-connection", async (req, res) => {
           height: 720,
         },
         fingerprint: {
-          devices: ["desktop"],
+          devices: ["desktop"] as const,
           locales: ["en-US"],
           operatingSystems: ["windows"],
         },
-        // CRITICAL: Disable automatic CAPTCHA solving
+        // CRITICAL: Disable automatic CAPTCHA solving for manual control
         solveCaptchas: false,
       },
       proxies: true,
@@ -422,6 +422,10 @@ router.post("/test-connection", async (req, res) => {
 
     console.log("Connected to Browserbase session successfully");
     isConnected = true;
+    
+    // Clean session - no automatic cookie operations
+    console.log("🧹 Clean session established - no automatic cookie loading");
+    console.log("👤 Manual control mode - user handles all authentication");
 
     // Get live view URL using debug method
     let liveViewUrl = null;
@@ -471,26 +475,18 @@ router.post("/navigate", async (req, res) => {
 
     console.log("Navigating to:", url);
 
-    // Enhanced navigation for X.com with better loading handling
+    // Clean navigation for X.com - no automatic operations
     if (url.includes('x.com') || url.includes('twitter.com')) {
-      console.log("Navigating to X/Twitter with enhanced loading...");
+      console.log("🌐 Navigating to X/Twitter (clean mode - no automation)...");
       
-      // First, try to navigate with domcontentloaded (faster)
+      // Simple, clean navigation - let user handle everything manually
       await currentPage.goto(url, {
         waitUntil: "domcontentloaded",
-        timeout: 45000,
+        timeout: 30000,
       });
       
-      // Wait for main content to appear
-      try {
-        await currentPage.waitForSelector('main', { timeout: 10000 });
-        console.log("Main content loaded");
-      } catch (error) {
-        console.log("Main content not found, continuing anyway");
-      }
-      
-      // Additional wait for scripts to load
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      console.log("✅ X.com loaded - ready for manual interaction");
+      console.log("🚫 No automatic cookie loading or CAPTCHA solving");
       
     } else {
       // Standard navigation for other sites
@@ -821,7 +817,7 @@ router.post("/reconnect-session", async (req, res) => {
       browserSettings: {
         viewport: { width: 1280, height: 720 },
         fingerprint: {
-          devices: ["desktop"],
+          devices: ["desktop"] as const,
           locales: ["en-US"],
           operatingSystems: ["windows"],
         },
