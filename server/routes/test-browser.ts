@@ -1246,32 +1246,29 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       return;
     }
 
-    // Step 2: Navigate to home to ensure we're in the right place
+    // Step 2: Manual handoff IMMEDIATELY after login (before any navigation)
+    console.log("👆 Manual handoff: Please navigate and click Following tab manually...");
+    
     broadcastToClients({
       type: 'automation_progress',
-      message: 'Navigating to home feed...',
-      step: 'navigation',
+      message: 'Please manually navigate to Home feed and click "Following" tab to avoid Cloudflare detection. Automation will continue once detected.',
+      step: 'manual_navigation_and_following',
       liveViewUrl: liveViewUrl
     });
 
-    console.log("🏠 Navigating to home feed...");
-    await page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(3000 + Math.random() * 2000);
+    // Wait for user to manually navigate to Following feed
+    const followingReached = await waitForFollowingFeedManually(page, liveViewUrl);
 
-    // Step 3: Verify we're still logged in after navigation
-    const homeUrl = await page.url();
-    if (homeUrl.includes('/login') || homeUrl.includes('/logout')) {
-      console.log("❌ Redirected to login after navigation - session expired");
+    if (!followingReached) {
+      console.log("⚠️ Manual navigation timeout, automation cannot continue");
       broadcastToClients({
         type: 'automation_error',
-        error: 'Session expired during navigation. Please log in again.',
+        error: 'Manual navigation timeout. Please navigate to Following feed manually.',
         sessionId: sessionId,
         liveViewUrl: liveViewUrl
       });
       return;
     }
-
-    // Step 4: Manual handoff for Following button click (anti-bot detection)
     console.log("👆 Manual handoff: Please click the Following tab...");
     
     broadcastToClients({
@@ -1891,69 +1888,62 @@ async function extractPostContent(page: Page): Promise<string> {
   }
 }
 
-// Wait for user to manually click Following tab
-async function waitForFollowingTabClick(page: Page, liveViewUrl: string) {
-  const maxWait = 120000; // 2 minutes
-  const checkInterval = 3000; // 3 seconds
+// Wait for user to manually navigate to Following feed (avoiding Cloudflare)
+async function waitForFollowingFeedManually(page: Page, liveViewUrl: string) {
+  const maxWait = 300000; // 5 minutes for manual navigation
+  const checkInterval = 5000; // 5 seconds
   let elapsed = 0;
 
-  console.log("⏳ Waiting for Following tab click...");
+  console.log("⏳ Waiting for manual navigation to Following feed...");
 
   while (elapsed < maxWait) {
     try {
-      // Method 1: Check URL for following path
       const currentUrl = await page.url();
-      if (currentUrl.includes('/following')) {
-        console.log("✅ Following tab detected via URL check");
-        return true;
-      }
+      console.log(`🔍 Current URL: ${currentUrl}`);
 
-      // Method 2: Check for Following feed indicators
-      const followingIndicators = [
-        'h2:has-text("Following")',
-        '[data-testid="primaryColumn"] h2:has-text("Following")',
-        'div:has-text("Following"):visible'
-      ];
+      // Check if we're past Cloudflare and on a valid X page
+      const isValidXPage = currentUrl.includes('x.com') && 
+                          !currentUrl.includes('/account/access') &&
+                          !currentUrl.includes('/login') &&
+                          !currentUrl.includes('/logout') &&
+                          !currentUrl.includes('/flow');
 
-      for (const selector of followingIndicators) {
-        try {
-          const element = await page.$(selector);
-          if (element) {
-            const isVisible = await element.isVisible();
-            if (isVisible) {
-              console.log(`✅ Following feed detected via selector: ${selector}`);
-              return true;
-            }
-          }
-        } catch (e) {
-          continue;
+      if (isValidXPage) {
+        // Check for Following feed specifically
+        if (currentUrl.includes('/following')) {
+          console.log("✅ Following feed detected via URL");
+          return true;
         }
-      }
 
-      // Method 3: Check for active Following tab state
-      const activeFollowingSelectors = [
-        'a[href="/following"][aria-selected="true"]',
-        'a[href="/following"].active',
-        '[role="tab"][aria-selected="true"]:has-text("Following")'
-      ];
-
-      for (const selector of activeFollowingSelectors) {
+        // Check for Following feed content
         try {
-          const element = await page.$(selector);
-          if (element) {
-            console.log(`✅ Active Following tab detected via selector: ${selector}`);
+          const followingElements = await page.$$eval(
+            'h2, [data-testid="primaryColumn"] h2, div[role="heading"]',
+            elements => elements.some(el => el.textContent?.includes('Following'))
+          );
+
+          if (followingElements) {
+            console.log("✅ Following feed detected via content");
             return true;
           }
-        } catch (e) {
-          continue;
+
+          // Check for any valid feed with posts (home feed is acceptable too)
+          const hasPosts = await page.$('[data-testid="tweet"]');
+          if (hasPosts && (currentUrl.includes('/home') || currentUrl.includes('/following'))) {
+            console.log("✅ Valid feed with posts detected");
+            return true;
+          }
+        } catch (elementError) {
+          console.log("⚠️ Element check failed:", elementError.message);
         }
+      } else if (currentUrl.includes('/account/access') || currentUrl.includes('challenges.cloudflare.com')) {
+        console.log("⚠️ Still on Cloudflare challenge page, waiting for manual resolution...");
       }
 
     } catch (error: any) {
-      console.log("⚠️ Following detection error:", error.message);
+      console.log("⚠️ Navigation detection error:", error.message);
     }
 
-    // Wait before next check
     await page.waitForTimeout(checkInterval);
     elapsed += checkInterval;
 
@@ -1962,14 +1952,14 @@ async function waitForFollowingTabClick(page: Page, liveViewUrl: string) {
       const remaining = Math.floor((maxWait - elapsed) / 1000);
       broadcastToClients({
         type: 'automation_progress',
-        message: `Waiting for Following tab click (${remaining}s remaining)...`,
-        step: 'following_wait',
+        message: `Waiting for manual navigation to feed (${remaining}s remaining)...`,
+        step: 'manual_navigation_wait',
         liveViewUrl: liveViewUrl
       });
     }
   }
 
-  console.log("❌ Following tab click detection timeout");
+  console.log("❌ Manual navigation timeout");
   return false;
 }
 
