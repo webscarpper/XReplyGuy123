@@ -30,13 +30,24 @@ async function saveCookiesToDatabase(sessionId: string, page: Page) {
     
     console.log(`📊 Found ${relevantCookies.length} relevant cookies out of ${cookies.length} total`);
     
+    // Add metadata for cookie validation
+    const cookieData = {
+      cookies: relevantCookies,
+      savedAt: new Date().toISOString(),
+      sessionId: sessionId,
+      domain: 'x.com'
+    };
+    
     // Serialize cookies to JSON
-    const cookiesJson = JSON.stringify(relevantCookies);
+    const cookiesJson = JSON.stringify(cookieData);
     
     // Update the database record
     await db
       .update(browserSessions)
-      .set({ cookies: cookiesJson })
+      .set({ 
+        cookies: cookiesJson,
+        status: 'active'
+      })
       .where(eq(browserSessions.sessionId, sessionId));
     
     console.log("✅ Cookies saved successfully to database");
@@ -62,12 +73,47 @@ async function loadCookiesFromDatabase(sessionId: string, page: Page) {
       return false;
     }
     
-    // Deserialize cookies
-    const cookies = JSON.parse(session.cookies);
-    console.log(`📊 Loading ${cookies.length} cookies from database`);
+    // Deserialize cookies with validation
+    const cookieData = JSON.parse(session.cookies);
+    
+    // Validate cookie data structure
+    if (!cookieData.cookies || !Array.isArray(cookieData.cookies)) {
+      console.log("❌ Invalid cookie data structure");
+      return false;
+    }
+    
+    // Check if cookies are too old (older than 7 days)
+    const savedAt = new Date(cookieData.savedAt);
+    const now = new Date();
+    const daysDiff = (now.getTime() - savedAt.getTime()) / (1000 * 3600 * 24);
+    
+    if (daysDiff > 7) {
+      console.log(`⚠️ Cookies are ${Math.round(daysDiff)} days old, may be expired`);
+    }
+    
+    const cookies = cookieData.cookies;
+    console.log(`📊 Loading ${cookies.length} cookies from database (saved ${Math.round(daysDiff)} days ago)`);
+    
+    // Filter out expired cookies
+    const validCookies = cookies.filter(cookie => {
+      if (cookie.expires && cookie.expires > 0) {
+        const expireDate = new Date(cookie.expires * 1000);
+        return expireDate > now;
+      }
+      return true; // Session cookies or cookies without expiration
+    });
+    
+    if (validCookies.length !== cookies.length) {
+      console.log(`📊 Filtered out ${cookies.length - validCookies.length} expired cookies`);
+    }
+    
+    if (validCookies.length === 0) {
+      console.log("❌ All cookies have expired");
+      return false;
+    }
     
     // Add cookies to browser context
-    await page.context().addCookies(cookies);
+    await page.context().addCookies(validCookies);
     
     console.log("✅ Cookies loaded successfully from database");
     return true;
@@ -104,24 +150,71 @@ async function validateCookies(page: Page) {
   try {
     console.log("🔍 Validating cookies by checking login status...");
     
+    // First, check if we have any relevant cookies
+    const currentCookies = await page.context().cookies();
+    const xCookies = currentCookies.filter(cookie => 
+      cookie.domain.includes('twitter.com') || 
+      cookie.domain.includes('x.com') ||
+      cookie.domain.includes('.twitter.com') ||
+      cookie.domain.includes('.x.com')
+    );
+    
+    if (xCookies.length === 0) {
+      console.log("❌ No X/Twitter cookies found");
+      return false;
+    }
+    
+    console.log(`📊 Found ${xCookies.length} X/Twitter cookies, validating...`);
+    
     // Navigate to X home page to check if cookies are valid
     await page.goto('https://x.com/home', {
       waitUntil: 'networkidle',
       timeout: 30000
     });
     
+    // Wait for page to fully load
+    await page.waitForTimeout(3000);
+    
     // Check if we're logged in by looking for authenticated elements
     const isLoggedIn = await checkIfLoggedIn(page);
     
     if (isLoggedIn) {
       console.log("✅ Cookies are valid - user is logged in");
+      
+      // Additional verification: check for authentication tokens
+      const hasAuthTokens = xCookies.some(cookie => 
+        cookie.name.includes('auth_token') || 
+        cookie.name.includes('ct0') || 
+        cookie.name.includes('_twitter_sess')
+      );
+      
+      if (hasAuthTokens) {
+        console.log("✅ Authentication tokens found in cookies");
+      }
+      
       return true;
     } else {
       console.log("❌ Cookies are invalid or expired - user is not logged in");
+      
+      // Check if we're on login page (indicates session expired)
+      const currentUrl = await page.url();
+      if (currentUrl.includes('/login') || currentUrl.includes('/flow')) {
+        console.log("❌ Redirected to login page - session definitely expired");
+      }
+      
       return false;
     }
   } catch (error: any) {
     console.error("❌ Cookie validation failed:", error.message);
+    
+    // Try to determine if it's a network issue or auth issue
+    const currentUrl = await page.url().catch(() => 'unknown');
+    if (currentUrl.includes('/login') || currentUrl.includes('/flow')) {
+      console.log("❌ Validation failed due to expired session");
+    } else {
+      console.log("❌ Validation failed due to network/technical issue");
+    }
+    
     return false;
   }
 }
@@ -1102,14 +1195,44 @@ router.post("/reconnect-session", async (req, res) => {
     
     console.log("🔄 Reconnecting to existing session:", sessionId);
     
+    // Check if session exists in database
+    const [existingSession] = await db
+      .select()
+      .from(browserSessions)
+      .where(eq(browserSessions.sessionId, sessionId));
+    
+    if (!existingSession) {
+      return res.status(404).json({
+        success: false,
+        status: 'session_not_found',
+        message: 'Session not found in database',
+        sessionId: sessionId
+      });
+    }
+    
+    console.log(`📋 Found session in database with status: ${existingSession.status}`);
+    
     // Connect to existing Browserbase session
     const browserbase = new Browserbase({
       apiKey: process.env.BROWSERBASE_API_KEY!,
     });
     
-    const browser = await chromium.connectOverCDP(`wss://connect.browserbase.com?apiKey=${process.env.BROWSERBASE_API_KEY}&sessionId=${sessionId}`);
-    const defaultContext = browser.contexts()[0];
-    const page = defaultContext.pages()[0];
+    let browser, defaultContext, page;
+    
+    try {
+      browser = await chromium.connectOverCDP(`wss://connect.browserbase.com?apiKey=${process.env.BROWSERBASE_API_KEY}&sessionId=${sessionId}`);
+      defaultContext = browser.contexts()[0];
+      page = defaultContext.pages()[0];
+      console.log("✅ Connected to existing Browserbase session");
+    } catch (connectionError: any) {
+      console.error("❌ Failed to connect to Browserbase session:", connectionError.message);
+      return res.status(500).json({
+        success: false,
+        status: 'connection_failed',
+        message: 'Failed to connect to browser session',
+        error: connectionError.message
+      });
+    }
     
     // Load cookies from database
     const cookiesLoaded = await loadCookiesFromDatabase(sessionId, page);
@@ -1123,9 +1246,23 @@ router.post("/reconnect-session", async (req, res) => {
       if (cookiesValid) {
         console.log("✅ Session reconnected with valid cookies");
         
+        // Update session status in database
+        await db
+          .update(browserSessions)
+          .set({ 
+            status: 'active',
+            browserUrl: await page.url().catch(() => null)
+          })
+          .where(eq(browserSessions.sessionId, sessionId));
+        
         // Get live view URL
-        const liveViewLinks = await browserbase.sessions.debug(sessionId);
-        const liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+        let liveViewUrl = null;
+        try {
+          const liveViewLinks = await browserbase.sessions.debug(sessionId);
+          liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+        } catch (debugError: any) {
+          console.log("⚠️ Could not get live view URL:", debugError.message);
+        }
         
         // Store session globally
         testSession = { id: sessionId };
@@ -1138,24 +1275,66 @@ router.post("/reconnect-session", async (req, res) => {
           status: 'reconnected_with_valid_cookies',
           liveViewUrl: liveViewUrl,
           message: 'Session reconnected with valid cookies - ready for automation',
-          sessionId: sessionId
+          sessionId: sessionId,
+          cookieAge: existingSession.cookies ? 'Available' : 'None',
+          sessionStatus: 'Active'
         });
       } else {
         console.log("❌ Cookies are invalid or expired");
+        
+        // Update session status in database
+        await db
+          .update(browserSessions)
+          .set({ 
+            status: 'cookies_expired'
+          })
+          .where(eq(browserSessions.sessionId, sessionId));
+        
+        // Get live view URL for manual login
+        let liveViewUrl = null;
+        try {
+          const liveViewLinks = await browserbase.sessions.debug(sessionId);
+          liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+        } catch (debugError: any) {
+          console.log("⚠️ Could not get live view URL:", debugError.message);
+        }
+        
         res.json({
           success: false,
           status: 'cookies_expired',
           message: 'Cookies are expired or invalid, manual login required',
-          sessionId: sessionId
+          sessionId: sessionId,
+          liveViewUrl: liveViewUrl,
+          requiresLogin: true
         });
       }
     } else {
       console.log("⚠️ Failed to load cookies, requiring manual login");
+      
+      // Update session status in database
+      await db
+        .update(browserSessions)
+        .set({ 
+          status: 'no_cookies'
+        })
+        .where(eq(browserSessions.sessionId, sessionId));
+      
+      // Get live view URL for manual login
+      let liveViewUrl = null;
+      try {
+        const liveViewLinks = await browserbase.sessions.debug(sessionId);
+        liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+      } catch (debugError: any) {
+        console.log("⚠️ Could not get live view URL:", debugError.message);
+      }
+      
       res.json({
         success: false,
         status: 'cookies_failed',
-        message: 'Failed to load cookies, manual login required',
-        sessionId: sessionId
+        message: 'No cookies available, manual login required',
+        sessionId: sessionId,
+        liveViewUrl: liveViewUrl,
+        requiresLogin: true
       });
     }
     
@@ -1163,7 +1342,9 @@ router.post("/reconnect-session", async (req, res) => {
     console.error("❌ Session reconnection error:", error);
     res.status(500).json({
       success: false,
-      message: error.message
+      status: 'error',
+      message: error.message,
+      sessionId: req.body.sessionId || 'unknown'
     });
   }
 });
@@ -1326,7 +1507,7 @@ async function waitForLoginAndContinueVerified(page: Page, sessionId: string, li
   try {
     console.log("⏳ Waiting for login completion...");
 
-    const loginDetected = await waitForLoginCompletionVerified(page, liveViewUrl);
+    const loginDetected = await waitForLoginCompletionVerified(page, liveViewUrl, sessionId);
 
     if (loginDetected) {
       console.log("✅ Login detected! Saving cookies...");
@@ -1454,7 +1635,7 @@ async function waitForLoginAndContinueVerified(page: Page, sessionId: string, li
 }
 
 // Login detection with verified functions and error recovery (VERIFIED)
-async function waitForLoginCompletionVerified(page: Page, liveViewUrl: string) {
+async function waitForLoginCompletionVerified(page: Page, liveViewUrl: string, sessionId?: string) {
   const maxWait = 300000; // 5 minutes
   const checkInterval = 5000; // 5 seconds (increased for stability)
   let elapsed = 0;
@@ -1480,6 +1661,18 @@ async function waitForLoginCompletionVerified(page: Page, liveViewUrl: string) {
 
       if (isAuthenticated) {
         console.log("✅ Login detected via URL check");
+        
+        // Save cookies immediately after successful login detection
+        if (sessionId) {
+          console.log("💾 Saving cookies after successful login...");
+          const cookiesSaved = await saveCookiesToDatabase(sessionId, page);
+          if (cookiesSaved) {
+            console.log("✅ Login cookies saved to database");
+          } else {
+            console.log("⚠️ Failed to save login cookies");
+          }
+        }
+        
         return true;
       }
 
