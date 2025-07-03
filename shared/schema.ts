@@ -67,6 +67,7 @@ export const browserSessions = pgTable("browser_sessions", {
   sessionId: text("session_id").notNull().unique(),
   status: text("status").notNull().default("starting"), // starting, waiting_login, active, stopped, error
   browserUrl: text("browser_url"),
+  cookies: text("cookies"), // Stores serialized browser cookies for session persistence
   createdAt: timestamp("created_at").defaultNow().notNull(),
   endedAt: timestamp("ended_at"),
 });
@@ -145,6 +146,7 @@ export const insertBrowserSessionSchema = createInsertSchema(browserSessions).pi
   sessionId: true,
   status: true,
   browserUrl: true,
+  cookies: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
