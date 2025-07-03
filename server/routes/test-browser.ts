@@ -1101,15 +1101,93 @@ async function waitForLoginAndContinueVerified(page: Page, sessionId: string, li
     const loginDetected = await waitForLoginCompletionVerified(page, liveViewUrl);
 
     if (loginDetected) {
-      console.log("✅ Login detected! Starting automation...");
+      console.log("✅ Login detected! Starting extended manual handoff for security challenges...");
 
       broadcastToClients({
         type: 'login_detected',
-        message: 'Login successful! Starting automation...',
+        message: 'Login detected! Please handle any security challenges and navigate to Following feed manually.',
         sessionId: sessionId,
         liveViewUrl: liveViewUrl
       });
 
+      // Extended manual handoff to handle Cloudflare/security challenges
+      broadcastToClients({
+        type: 'automation_progress',
+        message: 'MANUAL HANDOFF: Please complete any security challenges (Cloudflare CAPTCHA) and navigate to the Following feed. Automation will detect when ready.',
+        step: 'extended_manual_handoff',
+        liveViewUrl: liveViewUrl
+      });
+
+      // Wait for user to handle security challenges and navigate to Following feed
+      console.log('⏳ Waiting for user to handle security challenges and navigate to Following feed...');
+      
+      let followingFeedReady = false;
+      let handoffAttempts = 0;
+      const maxHandoffAttempts = 60; // 5 minutes total (5 second intervals)
+
+      while (!followingFeedReady && handoffAttempts < maxHandoffAttempts) {
+        try {
+          // Check for Cloudflare challenge
+          const cloudflareChallenge = await page.locator('text="Verify you are human"').isVisible().catch(() => false);
+          const cloudflareFrame = await page.locator('[src*="cloudflare"]').isVisible().catch(() => false);
+          
+          if (cloudflareChallenge || cloudflareFrame) {
+            console.log('🛡️ Cloudflare challenge detected, waiting for user to complete...');
+            broadcastToClients({
+              type: 'automation_progress',
+              message: 'Cloudflare security challenge detected. Please complete the CAPTCHA manually.',
+              step: 'cloudflare_challenge',
+              liveViewUrl: liveViewUrl
+            });
+          } else {
+            // Check if user has navigated to Following feed successfully
+            const followingTabVisible = await page.locator('[data-testid="AppTabBar_Following_Link"], [href="/following"], text="Following"').isVisible().catch(() => false);
+            const homeWithPosts = await page.locator('[data-testid="tweet"]').count().catch(() => 0);
+            const currentUrl = await page.url().catch(() => '');
+            
+            // User is ready if they're on Following feed OR home feed with posts visible
+            if (followingTabVisible || homeWithPosts > 0 || currentUrl.includes('/home') || currentUrl.includes('/following')) {
+              console.log('✅ User has successfully navigated past security challenges');
+              followingFeedReady = true;
+              
+              broadcastToClients({
+                type: 'automation_progress',
+                message: 'Security challenges completed! Automation will now continue.',
+                step: 'security_challenges_complete',
+                liveViewUrl: liveViewUrl
+              });
+              break;
+            }
+          }
+          
+          // Wait 5 seconds before checking again
+          await page.waitForTimeout(5000);
+          handoffAttempts++;
+          
+          // Update user every 30 seconds
+          if (handoffAttempts % 6 === 0) {
+            const remainingTime = Math.round((maxHandoffAttempts - handoffAttempts) * 5 / 60);
+            broadcastToClients({
+              type: 'automation_progress',
+              message: `Still waiting for manual navigation. ${remainingTime} minutes remaining. Please complete any security challenges and navigate to Following feed.`,
+              step: 'manual_handoff_waiting',
+              liveViewUrl: liveViewUrl
+            });
+          }
+          
+        } catch (checkError) {
+          console.log('⚠️ Error during manual handoff check:', checkError.message);
+          await page.waitForTimeout(5000);
+          handoffAttempts++;
+        }
+      }
+
+      if (!followingFeedReady) {
+        throw new Error('Manual handoff timeout - user did not complete security challenges within 5 minutes');
+      }
+
+      console.log('🎯 Extended manual handoff complete, continuing with automation...');
+      
       // Human thinking delay (VERIFIED: page.waitForTimeout)
       await page.waitForTimeout(3000 + Math.random() * 2000);
 
@@ -1246,59 +1324,69 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       return;
     }
 
-    // Step 2: Manual handoff IMMEDIATELY after login (before any navigation)
-    console.log("👆 Manual handoff: Please navigate and click Following tab manually...");
+    // Step 2: Navigate to Following feed (if not already there)
+    console.log('📋 Ensuring we are on Following feed...');
     
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Please manually navigate to Home feed and click "Following" tab to avoid Cloudflare detection. Automation will continue once detected.',
-      step: 'manual_navigation_and_following',
-      liveViewUrl: liveViewUrl
-    });
-
-    // Wait for user to manually navigate to Following feed
-    const followingReached = await waitForFollowingFeedManually(page, liveViewUrl);
-
-    if (!followingReached) {
-      console.log("⚠️ Manual navigation timeout, automation cannot continue");
-      broadcastToClients({
-        type: 'automation_error',
-        error: 'Manual navigation timeout. Please navigate to Following feed manually.',
-        sessionId: sessionId,
-        liveViewUrl: liveViewUrl
-      });
-      return;
-    }
-    console.log("👆 Manual handoff: Please click the Following tab...");
+    const currentUrl = await page.url();
+    const isAlreadyOnFollowing = currentUrl.includes('/following') || currentUrl.includes('/home');
     
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Please manually click the "Following" tab to avoid bot detection. Automation will continue automatically.',
-      step: 'manual_following_click',
-      liveViewUrl: liveViewUrl
-    });
-
-    // Wait for user to click Following tab and detect the change
-    const followingClicked = await waitForFollowingTabClick(page, liveViewUrl);
-
-    if (followingClicked) {
-      console.log("✅ Following tab clicked! Continuing automation...");
+    if (!isAlreadyOnFollowing) {
+      console.log('🔄 Not on Following feed, attempting to navigate...');
       
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'Following tab clicked! Continuing automation...',
-        step: 'following_detected',
-        liveViewUrl: liveViewUrl
-      });
+      const followingSelectors = [
+        '[data-testid="AppTabBar_Following_Link"]',
+        '[href="/following"]',
+        'a[aria-label*="Following"]',
+        'nav a:has-text("Following")',
+        '[role="tab"]:has-text("Following")'
+      ];
+      
+      let followingClicked = false;
+      
+      for (const selector of followingSelectors) {
+        try {
+          const followingTab = page.locator(selector).first();
+          const isVisible = await followingTab.isVisible();
+          
+          if (isVisible) {
+            console.log(`✅ Found Following tab with selector: ${selector}`);
+            
+            // Use ghost cursor for human-like clicking
+            try {
+              const { createCursor } = await import('ghost-cursor-playwright');
+              const cursor = await createCursor(page);
+              await cursor.click(followingTab);
+            } catch (cursorError) {
+              await followingTab.click();
+            }
+            
+            followingClicked = true;
+            console.log('✅ Following tab clicked');
+            break;
+          }
+        } catch (selectorError) {
+          console.log(`⚠️ Following selector ${selector} failed, trying next...`);
+          continue;
+        }
+      }
+      
+      if (!followingClicked) {
+        console.log('⚠️ Could not find Following tab, proceeding with current feed...');
+      } else {
+        // Wait for Following feed to load
+        await page.waitForTimeout(3000 + Math.random() * 2000);
+      }
     } else {
-      console.log("⚠️ Following tab click timeout, continuing with current feed...");
-      
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'Following click timeout, using current feed...',
-        step: 'following_timeout',
-        liveViewUrl: liveViewUrl
-      });
+      console.log('✅ Already on Following/Home feed, proceeding...');
+    }
+    
+    // Verify we have posts to interact with
+    const postsAvailable = await page.locator('[data-testid="tweet"]').count();
+    console.log(`📄 Found ${postsAvailable} posts available for interaction`);
+    
+    if (postsAvailable === 0) {
+      console.log('⚠️ No posts found, waiting for content to load...');
+      await page.waitForTimeout(5000);
     }
 
     // Step 5: Wait for content and find posts
@@ -2677,6 +2765,42 @@ async function extractPostContentFromElement(postElement: any): Promise<string> 
   } catch (error: any) {
     console.error('❌ Post content extraction failed:', error.message);
     return 'Great post! Thanks for sharing this.';
+  }
+}
+
+// Detect if Cloudflare security challenge is present
+async function detectCloudflareChallenge(page: Page): Promise<boolean> {
+  try {
+    // Multiple ways to detect Cloudflare challenge
+    const cloudflareIndicators = [
+      'text="Verify you are human"',
+      'text="X.com needs to review the security of your connection"',
+      '[src*="cloudflare"]',
+      'text="Cloudflare"',
+      'text="Please complete the security check"',
+      '.cf-challenge-running',
+      '#cf-challenge-stage'
+    ];
+    
+    for (const indicator of cloudflareIndicators) {
+      const isPresent = await page.locator(indicator).isVisible().catch(() => false);
+      if (isPresent) {
+        console.log(`🛡️ Cloudflare challenge detected with indicator: ${indicator}`);
+        return true;
+      }
+    }
+    
+    // Check URL for Cloudflare patterns
+    const currentUrl = await page.url();
+    if (currentUrl.includes('cloudflare') || currentUrl.includes('challenge') || currentUrl.includes('access')) {
+      console.log(`🛡️ Cloudflare challenge detected in URL: ${currentUrl}`);
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.log('⚠️ Error detecting Cloudflare challenge:', error.message);
+    return false;
   }
 }
 
