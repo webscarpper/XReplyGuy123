@@ -1271,55 +1271,35 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
       return;
     }
 
-    // Step 4: Look for Following tab with multiple selectors
+    // Step 4: Manual handoff for Following button click (anti-bot detection)
+    console.log("👆 Manual handoff: Please click the Following tab...");
+    
     broadcastToClients({
       type: 'automation_progress',
-      message: 'Looking for Following tab...',
-      step: 'finding_following',
+      message: 'Please manually click the "Following" tab to avoid bot detection. Automation will continue automatically.',
+      step: 'manual_following_click',
       liveViewUrl: liveViewUrl
     });
 
-    console.log("👆 Looking for Following tab...");
+    // Wait for user to click Following tab and detect the change
+    const followingClicked = await waitForFollowingTabClick(page, liveViewUrl);
 
-    // Try multiple selectors for Following tab
-    const followingSelectors = [
-      'a[href="/following"]',
-      'a[aria-label="Following"]',
-      'a:has-text("Following")',
-      '[data-testid*="following"]',
-      'nav a[href*="following"]'
-    ];
-
-    let followingTab = null;
-    for (const selector of followingSelectors) {
-      try {
-        followingTab = page.locator(selector);
-        await followingTab.waitFor({ state: 'visible', timeout: 5000 });
-        console.log(`✅ Found Following tab with selector: ${selector}`);
-        break;
-      } catch (e) {
-        console.log(`❌ Following tab not found with selector: ${selector}`);
-        continue;
-      }
-    }
-
-    if (followingTab) {
-      console.log("👆 Clicking Following tab...");
-      await cursor.click(followingTab);
-      await page.waitForTimeout(3000 + Math.random() * 2000);
-
+    if (followingClicked) {
+      console.log("✅ Following tab clicked! Continuing automation...");
+      
       broadcastToClients({
         type: 'automation_progress',
-        message: 'Switched to Following feed...',
-        step: 'following_clicked',
+        message: 'Following tab clicked! Continuing automation...',
+        step: 'following_detected',
         liveViewUrl: liveViewUrl
       });
     } else {
-      console.log("⚠️ Following tab not found, continuing with home feed...");
+      console.log("⚠️ Following tab click timeout, continuing with current feed...");
+      
       broadcastToClients({
         type: 'automation_progress',
-        message: 'Following tab not found, using home feed...',
-        step: 'using_home_feed',
+        message: 'Following click timeout, using current feed...',
+        step: 'following_timeout',
         liveViewUrl: liveViewUrl
       });
     }
@@ -1909,6 +1889,88 @@ async function extractPostContent(page: Page): Promise<string> {
     console.error('❌ Post content extraction failed:', error.message);
     return 'Great post! Thanks for sharing this.';
   }
+}
+
+// Wait for user to manually click Following tab
+async function waitForFollowingTabClick(page: Page, liveViewUrl: string) {
+  const maxWait = 120000; // 2 minutes
+  const checkInterval = 3000; // 3 seconds
+  let elapsed = 0;
+
+  console.log("⏳ Waiting for Following tab click...");
+
+  while (elapsed < maxWait) {
+    try {
+      // Method 1: Check URL for following path
+      const currentUrl = await page.url();
+      if (currentUrl.includes('/following')) {
+        console.log("✅ Following tab detected via URL check");
+        return true;
+      }
+
+      // Method 2: Check for Following feed indicators
+      const followingIndicators = [
+        'h2:has-text("Following")',
+        '[data-testid="primaryColumn"] h2:has-text("Following")',
+        'div:has-text("Following"):visible'
+      ];
+
+      for (const selector of followingIndicators) {
+        try {
+          const element = await page.$(selector);
+          if (element) {
+            const isVisible = await element.isVisible();
+            if (isVisible) {
+              console.log(`✅ Following feed detected via selector: ${selector}`);
+              return true;
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // Method 3: Check for active Following tab state
+      const activeFollowingSelectors = [
+        'a[href="/following"][aria-selected="true"]',
+        'a[href="/following"].active',
+        '[role="tab"][aria-selected="true"]:has-text("Following")'
+      ];
+
+      for (const selector of activeFollowingSelectors) {
+        try {
+          const element = await page.$(selector);
+          if (element) {
+            console.log(`✅ Active Following tab detected via selector: ${selector}`);
+            return true;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+    } catch (error: any) {
+      console.log("⚠️ Following detection error:", error.message);
+    }
+
+    // Wait before next check
+    await page.waitForTimeout(checkInterval);
+    elapsed += checkInterval;
+
+    // Periodic updates
+    if (elapsed % 30000 === 0) {
+      const remaining = Math.floor((maxWait - elapsed) / 1000);
+      broadcastToClients({
+        type: 'automation_progress',
+        message: `Waiting for Following tab click (${remaining}s remaining)...`,
+        step: 'following_wait',
+        liveViewUrl: liveViewUrl
+      });
+    }
+  }
+
+  console.log("❌ Following tab click detection timeout");
+  return false;
 }
 
 // Check if login is needed
