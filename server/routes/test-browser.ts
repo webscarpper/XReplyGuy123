@@ -5,9 +5,151 @@ import { Browserbase } from "@browserbasehq/sdk";
 import { chromium } from "playwright-core";
 import { Page, Browser, BrowserContext } from "playwright-core";
 import { AIReplyService } from '../services/aiService';
+import { db } from "../db";
+import { browserSessions } from "@shared/schema";
+import { eq } from "drizzle-orm";
 // Ghost cursor will be imported dynamically with error handling
 
 const router = Router();
+
+// Cookie management functions
+async function saveCookiesToDatabase(sessionId: string, page: Page) {
+  try {
+    console.log("💾 Saving cookies to database...");
+    
+    // Get all cookies from the browser context
+    const cookies = await page.context().cookies();
+    
+    // Filter for relevant cookies (X/Twitter domain)
+    const relevantCookies = cookies.filter(cookie => 
+      cookie.domain.includes('twitter.com') || 
+      cookie.domain.includes('x.com') ||
+      cookie.domain.includes('.twitter.com') ||
+      cookie.domain.includes('.x.com')
+    );
+    
+    console.log(`📊 Found ${relevantCookies.length} relevant cookies out of ${cookies.length} total`);
+    
+    // Serialize cookies to JSON
+    const cookiesJson = JSON.stringify(relevantCookies);
+    
+    // Update the database record
+    await db
+      .update(browserSessions)
+      .set({ cookies: cookiesJson })
+      .where(eq(browserSessions.sessionId, sessionId));
+    
+    console.log("✅ Cookies saved successfully to database");
+    return true;
+  } catch (error: any) {
+    console.error("❌ Failed to save cookies:", error.message);
+    return false;
+  }
+}
+
+async function loadCookiesFromDatabase(sessionId: string, page: Page) {
+  try {
+    console.log("📥 Loading cookies from database...");
+    
+    // Get cookies from database
+    const [session] = await db
+      .select()
+      .from(browserSessions)
+      .where(eq(browserSessions.sessionId, sessionId));
+    
+    if (!session || !session.cookies) {
+      console.log("⚠️ No cookies found in database");
+      return false;
+    }
+    
+    // Deserialize cookies
+    const cookies = JSON.parse(session.cookies);
+    console.log(`📊 Loading ${cookies.length} cookies from database`);
+    
+    // Add cookies to browser context
+    await page.context().addCookies(cookies);
+    
+    console.log("✅ Cookies loaded successfully from database");
+    return true;
+  } catch (error: any) {
+    console.error("❌ Failed to load cookies:", error.message);
+    return false;
+  }
+}
+
+async function createBrowserSessionRecord(sessionId: string, automationId: number = 1) {
+  try {
+    console.log("📝 Creating browser session record...");
+    
+    const [newSession] = await db
+      .insert(browserSessions)
+      .values({
+        automationId: automationId,
+        sessionId: sessionId,
+        status: 'starting',
+        browserUrl: null,
+        cookies: null,
+      })
+      .returning();
+    
+    console.log("✅ Browser session record created:", newSession.id);
+    return newSession;
+  } catch (error: any) {
+    console.error("❌ Failed to create browser session record:", error.message);
+    return null;
+  }
+}
+
+async function validateCookies(page: Page) {
+  try {
+    console.log("🔍 Validating cookies by checking login status...");
+    
+    // Navigate to X home page to check if cookies are valid
+    await page.goto('https://x.com/home', {
+      waitUntil: 'networkidle',
+      timeout: 30000
+    });
+    
+    // Check if we're logged in by looking for authenticated elements
+    const isLoggedIn = await checkIfLoggedIn(page);
+    
+    if (isLoggedIn) {
+      console.log("✅ Cookies are valid - user is logged in");
+      return true;
+    } else {
+      console.log("❌ Cookies are invalid or expired - user is not logged in");
+      return false;
+    }
+  } catch (error: any) {
+    console.error("❌ Cookie validation failed:", error.message);
+    return false;
+  }
+}
+
+async function checkIfLoggedIn(page: Page) {
+  try {
+    // Check for authenticated elements
+    const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
+    const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
+    const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
+    const tweetButton = await page.$('[data-testid="tweetButtonInline"]');
+    
+    // Check URL for authenticated state
+    const currentUrl = await page.url();
+    const isAuthenticatedUrl = (
+      currentUrl.includes('/home') || 
+      currentUrl.includes('/following') ||
+      currentUrl.includes('/notifications') ||
+      currentUrl.includes('/messages') ||
+      (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/flow') && !currentUrl.includes('/logout'))
+    );
+    
+    return !!(homeButton || profileButton || composeButton || tweetButton || isAuthenticatedUrl);
+  } catch (error: any) {
+    console.error("❌ Login check failed:", error.message);
+    return false;
+  }
+}
 
 // Browserbase configuration
 const browserbase = new Browserbase({
@@ -254,6 +396,14 @@ router.post("/test-connection", async (req, res) => {
     currentBrowser = await chromium.connectOverCDP(currentSession.connectUrl);
     currentContext = currentBrowser.contexts()[0];
     currentPage = currentContext.pages()[0];
+    
+    // Try to load cookies from database if session exists
+    const cookiesLoaded = await loadCookiesFromDatabase(currentSession.id, currentPage);
+    if (cookiesLoaded) {
+      console.log("✅ Loaded existing cookies for session");
+    } else {
+      console.log("⚠️ No existing cookies found, fresh session");
+    }
 
     // Set session timeout
     sessionTimeout = setTimeout(async () => {
@@ -943,6 +1093,81 @@ async function typeWithHumanBehavior(page: Page, text: string) {
   }
 }
 
+// POST /api/test-browser/reconnect-session - Reconnect to existing session with cookies
+router.post("/reconnect-session", async (req, res) => {
+  try {
+    const { sessionId } = z.object({
+      sessionId: z.string()
+    }).parse(req.body);
+    
+    console.log("🔄 Reconnecting to existing session:", sessionId);
+    
+    // Connect to existing Browserbase session
+    const browserbase = new Browserbase({
+      apiKey: process.env.BROWSERBASE_API_KEY!,
+    });
+    
+    const browser = await chromium.connectOverCDP(`wss://connect.browserbase.com?apiKey=${process.env.BROWSERBASE_API_KEY}&sessionId=${sessionId}`);
+    const defaultContext = browser.contexts()[0];
+    const page = defaultContext.pages()[0];
+    
+    // Load cookies from database
+    const cookiesLoaded = await loadCookiesFromDatabase(sessionId, page);
+    
+    if (cookiesLoaded) {
+      console.log("✅ Cookies loaded, validating...");
+      
+      // Validate cookies by checking login status
+      const cookiesValid = await validateCookies(page);
+      
+      if (cookiesValid) {
+        console.log("✅ Session reconnected with valid cookies");
+        
+        // Get live view URL
+        const liveViewLinks = await browserbase.sessions.debug(sessionId);
+        const liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+        
+        // Store session globally
+        testSession = { id: sessionId };
+        testBrowser = browser;
+        testContext = defaultContext;
+        testPage = page;
+        
+        res.json({
+          success: true,
+          status: 'reconnected_with_valid_cookies',
+          liveViewUrl: liveViewUrl,
+          message: 'Session reconnected with valid cookies - ready for automation',
+          sessionId: sessionId
+        });
+      } else {
+        console.log("❌ Cookies are invalid or expired");
+        res.json({
+          success: false,
+          status: 'cookies_expired',
+          message: 'Cookies are expired or invalid, manual login required',
+          sessionId: sessionId
+        });
+      }
+    } else {
+      console.log("⚠️ Failed to load cookies, requiring manual login");
+      res.json({
+        success: false,
+        status: 'cookies_failed',
+        message: 'Failed to load cookies, manual login required',
+        sessionId: sessionId
+      });
+    }
+    
+  } catch (error: any) {
+    console.error("❌ Session reconnection error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 // POST /api/test-browser/test-script - Human-like automation with verified functions
 router.post("/test-script", async (req, res) => {
   try {
@@ -1003,6 +1228,9 @@ router.post("/test-script", async (req, res) => {
     testBrowser = browser;
     testContext = defaultContext;
     testPage = page;
+    
+    // Create database record for this session
+    await createBrowserSessionRecord(session.id);
 
     // 4. Get live view URL (VERIFIED)
     const liveViewLinks = await browserbase.sessions.debug(session.id);
@@ -1101,14 +1329,28 @@ async function waitForLoginAndContinueVerified(page: Page, sessionId: string, li
     const loginDetected = await waitForLoginCompletionVerified(page, liveViewUrl);
 
     if (loginDetected) {
-      console.log("✅ Login detected! Starting extended manual handoff for security challenges...");
-
-      broadcastToClients({
-        type: 'login_detected',
-        message: 'Login detected! Please handle any security challenges and navigate to Following feed manually.',
-        sessionId: sessionId,
-        liveViewUrl: liveViewUrl
-      });
+      console.log("✅ Login detected! Saving cookies...");
+      
+      // Save cookies after successful login
+      const cookiesSaved = await saveCookiesToDatabase(sessionId, page);
+      
+      if (cookiesSaved) {
+        console.log("✅ Login cookies saved successfully!");
+        broadcastToClients({
+          type: 'login_detected',
+          message: 'Login detected and cookies saved! Please handle any security challenges and navigate to Following feed manually.',
+          sessionId: sessionId,
+          liveViewUrl: liveViewUrl
+        });
+      } else {
+        console.log("⚠️ Login detected but failed to save cookies");
+        broadcastToClients({
+          type: 'login_detected',
+          message: 'Login detected! Please handle any security challenges and navigate to Following feed manually.',
+          sessionId: sessionId,
+          liveViewUrl: liveViewUrl
+        });
+      }
 
       // Extended manual handoff to handle Cloudflare/security challenges
       broadcastToClients({
@@ -1826,6 +2068,9 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
                 completion: '✅ Extended cycle complete - session active'
               }
             });
+            
+            // Update cookies after successful automation
+            await saveCookiesToDatabase(sessionId, page);
           } else {
             console.log("⚠️ Modal still open - checking for error messages");
 
