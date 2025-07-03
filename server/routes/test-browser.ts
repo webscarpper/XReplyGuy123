@@ -1327,8 +1327,8 @@ async function performVerifiedAutomation(page: Page, sessionId: string, liveView
     // Step 2: Navigate to Following feed (if not already there)
     console.log('📋 Ensuring we are on Following feed...');
     
-    const currentUrl = await page.url();
-    const isAlreadyOnFollowing = currentUrl.includes('/following') || currentUrl.includes('/home');
+    const pageUrl = await page.url();
+    const isAlreadyOnFollowing = pageUrl.includes('/following') || pageUrl.includes('/home');
     
     if (!isAlreadyOnFollowing) {
       console.log('🔄 Not on Following feed, attempting to navigate...');
