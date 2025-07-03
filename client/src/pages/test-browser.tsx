@@ -1,12 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { 
+import {
   ArrowLeft,
   Play,
   Square,
@@ -16,7 +22,13 @@ import {
   Monitor,
   CheckCircle,
   XCircle,
-  RefreshCw
+  RefreshCw,
+  Pause,
+  BarChart3,
+  Target,
+  Heart,
+  MessageCircle,
+  UserPlus,
 } from "lucide-react";
 
 interface BrowserbaseStatus {
@@ -35,39 +47,61 @@ interface AutomationState {
   step: number;
   totalSteps: number;
   message: string;
+  replies: number;
+  likes: number;
+  follows: number;
+  targetReplies: number;
+  targetLikes: number;
+  targetFollows: number;
+  energyLevel: number;
+  focusLevel: number;
+  currentPhase: string;
+  isPaused: boolean;
 }
 
 export default function TestBrowser() {
   const [, setLocation] = useLocation();
-  const [status, setStatus] = useState<BrowserbaseStatus>({ isConnected: false, status: 'disconnected' });
+  const [status, setStatus] = useState<BrowserbaseStatus>({
+    isConnected: false,
+    status: "disconnected",
+  });
   const [loading, setLoading] = useState(false);
-  const [navigateUrl, setNavigateUrl] = useState("https://twitter.com");
+  const [navigateUrl, setNavigateUrl] = useState("https://x.com");
   const [liveViewUrl, setLiveViewUrl] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [sessionTimeRemaining, setSessionTimeRemaining] = useState<string>("");
 
-  // Automation state
+  // Enhanced automation state
   const [automation, setAutomation] = useState<AutomationState>({
     running: false,
-    status: '',
+    status: "",
     progress: 0,
     step: 0,
     totalSteps: 8,
-    message: ''
+    message: "",
+    replies: 0,
+    likes: 0,
+    follows: 0,
+    targetReplies: 100,
+    targetLikes: 100,
+    targetFollows: 100,
+    energyLevel: 100,
+    focusLevel: 100,
+    currentPhase: "idle",
+    isPaused: false,
   });
-  const [twitterUsername, setTwitterUsername] = useState("");
-  const [twitterPassword, setTwitterPassword] = useState("");
 
   // Test Script state
   const [isTestScriptRunning, setIsTestScriptRunning] = useState(false);
-  const [automationStatus, setAutomationStatus] = useState<string>('');
+  const [automationStatus, setAutomationStatus] = useState<string>("");
   const [showManualIntervention, setShowManualIntervention] = useState(false);
-  const [testScriptLiveViewUrl, setTestScriptLiveViewUrl] = useState<string>('');
+  const [testScriptLiveViewUrl, setTestScriptLiveViewUrl] =
+    useState<string>("");
 
   // Secondary tab live view state
   const [secondaryTabUrl, setSecondaryTabUrl] = useState<string | null>(null);
-  const [secondaryTabName, setSecondaryTabName] = useState<string>('');
+  const [secondaryTabName, setSecondaryTabName] = useState<string>("");
   const [showSecondaryTab, setShowSecondaryTab] = useState(false);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -78,14 +112,16 @@ export default function TestBrowser() {
     const url = `/api/test-browser${endpoint}`;
     const response = await fetch(url, {
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         ...options.headers,
       },
       ...options,
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Request failed' }));
+      const error = await response
+        .json()
+        .catch(() => ({ message: "Request failed" }));
       throw new Error(error.message || `HTTP ${response.status}`);
     }
 
@@ -110,96 +146,125 @@ export default function TestBrowser() {
         console.log("WebSocket message:", data);
 
         switch (data.type) {
-          case 'live_view_url':
+          case "live_view_url":
             setLiveViewUrl(data.url);
+            setTestScriptLiveViewUrl(data.url);
             break;
-          case 'automation_status':
-            setAutomation(prev => ({
+          case "automation_status":
+          case "automation_progress":
+            setAutomation((prev) => ({
               ...prev,
               running: true,
-              status: data.status,
-              progress: (data.step / data.totalSteps) * 100,
-              step: data.step,
-              totalSteps: data.totalSteps,
-              message: data.message
+              status: data.status || prev.status,
+              progress: data.automationState
+                ? ((data.automationState.replies +
+                    data.automationState.likes +
+                    data.automationState.follows) /
+                    (data.automationState.targetReplies +
+                      data.automationState.targetLikes +
+                      data.automationState.targetFollows)) *
+                  100
+                : prev.progress,
+              step: data.step || prev.step,
+              message: data.message || prev.message,
+              ...data.automationState,
             }));
+            setAutomationStatus(data.message || "");
+            if (data.liveViewUrl && !liveViewUrl) {
+              setLiveViewUrl(data.liveViewUrl);
+              setTestScriptLiveViewUrl(data.liveViewUrl);
+            }
             break;
-          case 'automation_complete':
-            setAutomation(prev => ({
+          case "automation_complete":
+            setAutomation((prev) => ({
               ...prev,
               running: false,
-              status: 'completed',
+              status: "completed",
               progress: 100,
-              message: 'Automation completed successfully'
+              message: data.message || "Automation completed successfully",
+              ...data.automationState,
             }));
             setIsTestScriptRunning(false);
             setShowManualIntervention(false);
-            setAutomationStatus('');
-            console.log('🎉 Test automation completed successfully!');
+            setAutomationStatus("");
+            console.log("🎉 Enhanced automation completed successfully!");
             break;
-          case 'automation_error':
-            setAutomation(prev => ({
+          case "automation_error":
+            setAutomation((prev) => ({
               ...prev,
               running: false,
-              status: 'error',
-              message: data.error || 'Automation failed'
+              status: "error",
+              message: data.error || "Automation failed",
+              ...data.automationState,
             }));
             setIsTestScriptRunning(false);
             setShowManualIntervention(false);
-            setAutomationStatus('');
-            console.error('Automation failed:', data.error);
+            setAutomationStatus("");
+            console.error("Automation failed:", data.error);
             break;
-          case 'session_closed':
+          case "automation_paused":
+            setAutomation((prev) => ({
+              ...prev,
+              isPaused: true,
+              message: data.message || "Automation paused",
+              ...data.automationState,
+            }));
+            setAutomationStatus(data.message || "Automation paused");
+            break;
+          case "automation_resumed":
+            setAutomation((prev) => ({
+              ...prev,
+              isPaused: false,
+              message: data.message || "Automation resumed",
+              ...data.automationState,
+            }));
+            setAutomationStatus(data.message || "Automation resumed");
+            break;
+          case "session_closed":
             setLiveViewUrl(null);
-            setStatus(prev => ({ ...prev, isConnected: false, status: 'disconnected' }));
+            setTestScriptLiveViewUrl("");
+            setStatus((prev) => ({
+              ...prev,
+              isConnected: false,
+              status: "disconnected",
+            }));
             break;
-          case 'automation_progress':
-            setAutomationStatus(data.message);
-            // Maintain live view URL if provided
-            if (data.liveViewUrl && !liveViewUrl) {
-              setLiveViewUrl(data.liveViewUrl);
-            }
-            break;
-          case 'login_detected':
+          case "login_detected":
             setShowManualIntervention(false);
-            setAutomationStatus('Login detected! Continuing automation...');
-            // Maintain live view URL if provided
+            setAutomationStatus(
+              "Login detected! Starting enhanced automation...",
+            );
             if (data.liveViewUrl && !liveViewUrl) {
               setLiveViewUrl(data.liveViewUrl);
+              setTestScriptLiveViewUrl(data.liveViewUrl);
             }
             break;
-          case 'secondary_tab_opened':
+          case "secondary_tab_opened":
             console.log(`🎥 ${data.tabType} tab opened:`, data.tabUrl);
-            console.log('📺 All tabs:', data.allTabs);
-
-            // Show secondary tab in the UI
             setSecondaryTabUrl(data.tabUrl);
-            setSecondaryTabName(data.tabName || 'Secondary Tab');
+            setSecondaryTabName(data.tabName || "Secondary Tab");
             setShowSecondaryTab(true);
-            
-            // Update status
-            setAutomation(prev => ({
+            setAutomation((prev) => ({
               ...prev,
-              message: data.message || `${data.tabType} tab opened in secondary view`
+              message:
+                data.message || `${data.tabType} tab opened in secondary view`,
             }));
             break;
-
-          case 'secondary_tab_closing':
+          case "secondary_tab_closing":
             console.log(`🔄 ${data.tabType} tab closing, returning to X`);
-            setAutomation(prev => ({
+            setAutomation((prev) => ({
               ...prev,
-              message: data.message || `${data.tabType} tab closing...`
+              message: data.message || `${data.tabType} tab closing...`,
             }));
             break;
-
-          case 'secondary_tab_closed':
+          case "secondary_tab_closed":
             console.log(`✅ ${data.tabType} tab closed`);
             setShowSecondaryTab(false);
             setSecondaryTabUrl(null);
-            setSecondaryTabName('');
-            setAutomation(prev => ({
+            setSecondaryTabName("");
+            setAutomation((prev) => ({
               ...prev,
-              message: data.message || `${data.tabType} tab closed`
+              message: data.message || `${data.tabType} tab closed`,
             }));
             break;
         }
@@ -230,16 +295,19 @@ export default function TestBrowser() {
     if (status.isConnected && sessionStartTime.current > 0) {
       timer = setInterval(() => {
         const elapsed = Date.now() - sessionStartTime.current;
-        const remaining = Math.max(0, 3600000 - elapsed); // 1 hour in ms
+        const remaining = Math.max(0, 21600000 - elapsed); // 6 hours in ms
 
         if (remaining === 0) {
           setSessionTimeRemaining("Session expired");
           return;
         }
 
-        const minutes = Math.floor(remaining / 60000);
+        const hours = Math.floor(remaining / 3600000);
+        const minutes = Math.floor((remaining % 3600000) / 60000);
         const seconds = Math.floor((remaining % 60000) / 1000);
-        setSessionTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+        setSessionTimeRemaining(
+          `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`,
+        );
       }, 1000);
     }
 
@@ -255,18 +323,21 @@ export default function TestBrowser() {
 
   const checkStatus = async () => {
     try {
-      const response = await apiRequest('/status');
+      const response = await apiRequest("/status");
       setStatus(response);
+      if (response.automationState) {
+        setAutomation((prev) => ({ ...prev, ...response.automationState }));
+      }
     } catch (error) {
-      console.error('Status check failed:', error);
+      console.error("Status check failed:", error);
     }
   };
 
   const connectAndStartLiveView = async () => {
     setLoading(true);
     try {
-      console.log("Connecting to Browserbase with stealth...");
-      const response = await apiRequest('/test-connection', { method: 'POST' });
+      console.log("Connecting to Browserbase with Pro plan features...");
+      const response = await apiRequest("/test-connection", { method: "POST" });
 
       console.log("Connection response:", response);
       setStatus(response);
@@ -274,22 +345,24 @@ export default function TestBrowser() {
 
       if (response.liveViewUrl) {
         setLiveViewUrl(response.liveViewUrl);
+        setTestScriptLiveViewUrl(response.liveViewUrl);
       } else {
-        // Start live view if not immediately available
         setTimeout(async () => {
           try {
-            const streamResponse = await apiRequest('/start-streaming', { method: 'POST' });
+            const streamResponse = await apiRequest("/start-streaming", {
+              method: "POST",
+            });
             if (streamResponse.liveViewUrl) {
               setLiveViewUrl(streamResponse.liveViewUrl);
+              setTestScriptLiveViewUrl(streamResponse.liveViewUrl);
             }
           } catch (e) {
-            console.error('Failed to start live view:', e);
+            console.error("Failed to start live view:", e);
           }
         }, 2000);
       }
-
     } catch (error: any) {
-      console.error('Connection failed:', error);
+      console.error("Connection failed:", error);
       alert(`Connection failed: ${error.message}`);
     } finally {
       setLoading(false);
@@ -298,15 +371,15 @@ export default function TestBrowser() {
 
   const navigateTo = async () => {
     if (!status.isConnected) {
-      alert('Please connect first');
+      alert("Please connect first");
       return;
     }
 
     setLoading(true);
     try {
-      await apiRequest('/navigate', {
-        method: 'POST',
-        body: JSON.stringify({ url: navigateUrl })
+      await apiRequest("/navigate", {
+        method: "POST",
+        body: JSON.stringify({ url: navigateUrl }),
       });
     } catch (error: any) {
       alert(`Navigation failed: ${error.message}`);
@@ -315,58 +388,38 @@ export default function TestBrowser() {
     }
   };
 
-  const startAutomation = async () => {
-    if (!status.isConnected) {
-      alert('Please connect first');
-      return;
-    }
-
-    if (!twitterUsername.trim() || !twitterPassword.trim()) {
-      alert('Please enter Twitter credentials');
-      return;
-    }
-
-    setLoading(true);
-    setAutomation(prev => ({ ...prev, running: true, status: 'starting', message: 'Starting automation...' }));
-
-    try {
-      await apiRequest('/test-automation', {
-        method: 'POST',
-        body: JSON.stringify({
-          username: twitterUsername,
-          password: twitterPassword
-        })
-      });
-    } catch (error: any) {
-      setAutomation(prev => ({
-        ...prev,
-        running: false,
-        status: 'error',
-        message: error.message
-      }));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const terminateSession = async () => {
     setLoading(true);
     try {
-      await apiRequest('/session', { method: 'DELETE' });
+      await apiRequest("/session", { method: "DELETE" });
       setLiveViewUrl(null);
-      setStatus({ isConnected: false, status: 'disconnected' });
+      setTestScriptLiveViewUrl("");
+      setStatus({ isConnected: false, status: "disconnected" });
       setSessionTimeRemaining("");
       sessionStartTime.current = 0;
       setAutomation({
         running: false,
-        status: '',
+        status: "",
         progress: 0,
         step: 0,
         totalSteps: 8,
-        message: ''
+        message: "",
+        replies: 0,
+        likes: 0,
+        follows: 0,
+        targetReplies: 100,
+        targetLikes: 100,
+        targetFollows: 100,
+        energyLevel: 100,
+        focusLevel: 100,
+        currentPhase: "idle",
+        isPaused: false,
       });
+      setShowSecondaryTab(false);
+      setSecondaryTabUrl(null);
+      setSecondaryTabName("");
     } catch (error: any) {
-      console.error('Session termination failed:', error);
+      console.error("Session termination failed:", error);
     } finally {
       setLoading(false);
     }
@@ -375,19 +428,19 @@ export default function TestBrowser() {
   const handleTestScript = async () => {
     try {
       setIsTestScriptRunning(true);
-      setAutomationStatus('Starting automation...');
+      setAutomationStatus("Starting enhanced automation...");
 
-      const response = await apiRequest('/test-script', {
-        method: 'POST',
-        body: JSON.stringify({})
+      const response = await apiRequest("/test-script", {
+        method: "POST",
+        body: JSON.stringify({}),
       });
 
       if (response.success) {
-        if (response.status === 'manual_intervention_required') {
+        if (response.status === "manual_login_required") {
           setShowManualIntervention(true);
           setTestScriptLiveViewUrl(response.liveViewUrl);
           setAutomationStatus(response.message);
-        } else if (response.status === 'continuing_automation') {
+        } else if (response.status === "continuing_automation") {
           setAutomationStatus(response.message);
         }
       } else {
@@ -395,8 +448,62 @@ export default function TestBrowser() {
         setIsTestScriptRunning(false);
       }
     } catch (error: any) {
-      console.error('Failed to start test script:', error);
+      console.error("Failed to start test script:", error);
       setIsTestScriptRunning(false);
+    }
+  };
+
+  const pauseAutomation = async () => {
+    try {
+      await apiRequest("/pause-automation", { method: "POST" });
+    } catch (error: any) {
+      console.error("Failed to pause automation:", error);
+    }
+  };
+
+  const resumeAutomation = async () => {
+    try {
+      await apiRequest("/resume-automation", { method: "POST" });
+    } catch (error: any) {
+      console.error("Failed to resume automation:", error);
+    }
+  };
+
+  const reconnectSession = async () => {
+    if (!status.sessionId) {
+      alert("No session ID available for reconnection");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await apiRequest("/reconnect-session", {
+        method: "POST",
+        body: JSON.stringify({ sessionId: status.sessionId }),
+      });
+
+      if (response.success) {
+        setStatus((prev) => ({
+          ...prev,
+          isConnected: true,
+          sessionId: response.sessionId,
+        }));
+        setLiveViewUrl(response.liveViewUrl);
+        setTestScriptLiveViewUrl(response.liveViewUrl);
+        sessionStartTime.current = Date.now();
+
+        if (response.cookiesValid) {
+          alert("Reconnected successfully with saved login!");
+        } else {
+          alert("Reconnected, but manual login required (cookies expired)");
+        }
+      } else {
+        alert(`Reconnection failed: ${response.message}`);
+      }
+    } catch (error: any) {
+      alert(`Reconnection failed: ${error.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -409,17 +516,22 @@ export default function TestBrowser() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setLocation('/dashboard')}
+              onClick={() => setLocation("/dashboard")}
               className="text-white hover:bg-white/10"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Dashboard
             </Button>
-            <h1 className="text-2xl font-bold text-white">Browserbase Live Testing</h1>
+            <h1 className="text-2xl font-bold text-white">
+              Enhanced X Automation
+            </h1>
           </div>
 
           {status.isConnected && sessionTimeRemaining && (
-            <Badge variant="outline" className="text-green-400 border-green-400">
+            <Badge
+              variant="outline"
+              className="text-green-400 border-green-400"
+            >
               <Timer className="w-4 h-4 mr-1" />
               {sessionTimeRemaining}
             </Badge>
@@ -437,7 +549,7 @@ export default function TestBrowser() {
                   Browserbase Session
                 </CardTitle>
                 <CardDescription className="text-gray-300">
-                  Basic stealth + Auto CAPTCHA solving + Proxies
+                  Pro Plan: Stealth + 6h Sessions + Proxies
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -461,11 +573,22 @@ export default function TestBrowser() {
                 {status.isConnected && (
                   <>
                     <div className="flex items-center justify-between">
-                      <span className="text-gray-300">Stealth Mode:</span>
-                      <Badge variant="outline" className="text-green-400 border-green-400">
-                        <Shield className="w-3 h-3 mr-1" />
-                        Basic + CAPTCHA
-                      </Badge>
+                      <span className="text-gray-300">Features:</span>
+                      <div className="flex gap-1">
+                        <Badge
+                          variant="outline"
+                          className="text-green-400 border-green-400 text-xs"
+                        >
+                          <Shield className="w-3 h-3 mr-1" />
+                          Stealth
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className="text-blue-400 border-blue-400 text-xs"
+                        >
+                          6h
+                        </Badge>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between">
@@ -478,9 +601,13 @@ export default function TestBrowser() {
                     <div className="flex items-center justify-between">
                       <span className="text-gray-300">WebSocket:</span>
                       <div className="flex items-center gap-1">
-                        <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-400' : 'bg-red-400'}`} />
-                        <span className={`text-xs ${wsConnected ? 'text-green-400' : 'text-red-400'}`}>
-                          {wsConnected ? 'Connected' : 'Disconnected'}
+                        <div
+                          className={`w-2 h-2 rounded-full ${wsConnected ? "bg-green-400" : "bg-red-400"}`}
+                        />
+                        <span
+                          className={`text-xs ${wsConnected ? "text-green-400" : "text-red-400"}`}
+                        >
+                          {wsConnected ? "Connected" : "Disconnected"}
                         </span>
                       </div>
                     </div>
@@ -511,6 +638,17 @@ export default function TestBrowser() {
                     )}
                   </Button>
 
+                  {status.sessionId && !status.isConnected && (
+                    <Button
+                      onClick={reconnectSession}
+                      disabled={loading}
+                      className="w-full bg-blue-600 hover:bg-blue-700"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Reconnect with Cookies
+                    </Button>
+                  )}
+
                   {(status.isConnected || liveViewUrl) && (
                     <Button
                       onClick={terminateSession}
@@ -536,12 +674,14 @@ export default function TestBrowser() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="url" className="text-gray-300">URL</Label>
+                  <Label htmlFor="url" className="text-gray-300">
+                    URL
+                  </Label>
                   <Input
                     id="url"
                     value={navigateUrl}
                     onChange={(e) => setNavigateUrl(e.target.value)}
-                    placeholder="https://twitter.com"
+                    placeholder="https://x.com"
                     className="bg-black/50 border-gray-600 text-white"
                   />
                 </div>
@@ -555,107 +695,213 @@ export default function TestBrowser() {
               </CardContent>
             </Card>
 
-            {/* Test Script */}
+            {/* Enhanced Test Script */}
             <Card className="bg-black/50 border-purple-500/20">
               <CardHeader>
-                <CardTitle className="text-white">Complete Test Script</CardTitle>
+                <CardTitle className="text-white">
+                  Enhanced X Automation
+                </CardTitle>
                 <CardDescription className="text-gray-300">
-                  End-to-end automation with manual login handoff
+                  6-hour human-like automation: 100 replies, 100 likes, 100
+                  follows
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {isTestScriptRunning && automationStatus && (
-                  <div className="p-3 bg-blue-900/50 rounded-lg border border-blue-500/30">
-                    <p className="text-blue-300 text-sm">{automationStatus}</p>
+                {/* Automation Progress */}
+                {automation.running && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="text-center">
+                        <div className="flex items-center justify-center gap-1 text-blue-400">
+                          <MessageCircle className="w-3 h-3" />
+                          <span>
+                            {automation.replies}/{automation.targetReplies}
+                          </span>
+                        </div>
+                        <div className="text-gray-400">Replies</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="flex items-center justify-center gap-1 text-red-400">
+                          <Heart className="w-3 h-3" />
+                          <span>
+                            {automation.likes}/{automation.targetLikes}
+                          </span>
+                        </div>
+                        <div className="text-gray-400">Likes</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="flex items-center justify-center gap-1 text-green-400">
+                          <UserPlus className="w-3 h-3" />
+                          <span>
+                            {automation.follows}/{automation.targetFollows}
+                          </span>
+                        </div>
+                        <div className="text-gray-400">Follows</div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-300">Overall Progress</span>
+                        <span className="text-purple-400">
+                          {Math.round(automation.progress)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-700 rounded-full h-2">
+                        <div
+                          className="bg-purple-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${automation.progress}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Human Behavior Indicators */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Energy</span>
+                          <span className="text-yellow-400">
+                            {Math.round(automation.energyLevel)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-700 rounded-full h-1">
+                          <div
+                            className="bg-yellow-400 h-1 rounded-full transition-all duration-300"
+                            style={{ width: `${automation.energyLevel}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Focus</span>
+                          <span className="text-cyan-400">
+                            {Math.round(automation.focusLevel)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-700 rounded-full h-1">
+                          <div
+                            className="bg-cyan-400 h-1 rounded-full transition-all duration-300"
+                            style={{ width: `${automation.focusLevel}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-sm text-gray-300 bg-gray-800/50 p-2 rounded">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-2 h-2 rounded-full ${automation.isPaused ? "bg-yellow-400" : "bg-green-400"}`}
+                        />
+                        <span>{automation.message}</span>
+                      </div>
+                    </div>
                   </div>
                 )}
 
-                <Button
-                  onClick={handleTestScript}
-                  disabled={isTestScriptRunning}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                >
-                  {isTestScriptRunning ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      Running Test Script...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4 mr-2" />
-                      Test Script
-                    </>
+                {isTestScriptRunning &&
+                  automationStatus &&
+                  !automation.running && (
+                    <div className="p-3 bg-blue-900/50 rounded-lg border border-blue-500/30">
+                      <p className="text-blue-300 text-sm">
+                        {automationStatus}
+                      </p>
+                    </div>
                   )}
-                </Button>
+
+                {/* Control Buttons */}
+                <div className="space-y-2">
+                  <Button
+                    onClick={handleTestScript}
+                    disabled={isTestScriptRunning || automation.running}
+                    className="w-full bg-green-600 hover:bg-green-700"
+                  >
+                    {isTestScriptRunning || automation.running ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Running Enhanced Automation...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 mr-2" />
+                        Start Enhanced Automation
+                      </>
+                    )}
+                  </Button>
+
+                  {automation.running && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        onClick={pauseAutomation}
+                        disabled={automation.isPaused}
+                        variant="outline"
+                        className="text-yellow-400 border-yellow-400 hover:bg-yellow-400/10"
+                      >
+                        <Pause className="w-4 h-4 mr-2" />
+                        {automation.isPaused ? "Paused" : "Pause"}
+                      </Button>
+                      <Button
+                        onClick={resumeAutomation}
+                        disabled={!automation.isPaused}
+                        variant="outline"
+                        className="text-green-400 border-green-400 hover:bg-green-400/10"
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        Resume
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
-            {/* Twitter Automation */}
-            <Card className="bg-black/50 border-purple-500/20">
-              <CardHeader>
-                <CardTitle className="text-white">Twitter Automation Test</CardTitle>
-                <CardDescription className="text-gray-300">
-                  Test complete automation workflow (requires credentials)
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="username" className="text-gray-300">Twitter Username</Label>
-                  <Input
-                    id="username"
-                    value={twitterUsername}
-                    onChange={(e) => setTwitterUsername(e.target.value)}
-                    placeholder="@your_username"
-                    className="bg-black/50 border-gray-600 text-white"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="password" className="text-gray-300">Twitter Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={twitterPassword}
-                    onChange={(e) => setTwitterPassword(e.target.value)}
-                    placeholder="Your password"
-                    className="bg-black/50 border-gray-600 text-white"
-                  />
-                </div>
+            {/* Automation Stats */}
+            {(automation.running || automation.status === "completed") && (
+              <Card className="bg-black/50 border-purple-500/20">
+                <CardHeader>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5" />
+                    Session Stats
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <div className="text-gray-400">Phase</div>
+                      <div className="text-white capitalize">
+                        {automation.currentPhase}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400">Status</div>
+                      <div
+                        className={`capitalize ${automation.isPaused ? "text-yellow-400" : "text-green-400"}`}
+                      >
+                        {automation.isPaused ? "Paused" : automation.status}
+                      </div>
+                    </div>
+                  </div>
 
-                {automation.running && (
+                  <Separator className="bg-gray-700" />
+
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-300">Step {automation.step}/{automation.totalSteps}</span>
-                      <span className="text-purple-400">{Math.round(automation.progress)}%</span>
+                      <span className="text-gray-400">Total Actions</span>
+                      <span className="text-white">
+                        {automation.replies +
+                          automation.likes +
+                          automation.follows}
+                      </span>
                     </div>
-                    <div className="w-full bg-gray-700 rounded-full h-2">
-                      <div 
-                        className="bg-purple-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${automation.progress}%` }}
-                      />
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-400">Completion Rate</span>
+                      <span className="text-white">
+                        {Math.round(automation.progress)}%
+                      </span>
                     </div>
-                    <p className="text-sm text-gray-300">{automation.message}</p>
                   </div>
-                )}
-
-                <Button
-                  onClick={startAutomation}
-                  disabled={!status.isConnected || loading || automation.running}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                >
-                  {automation.running ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      Running Automation...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4 mr-2" />
-                      Start Twitter Test
-                    </>
-                  )}
-                </Button>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Live View */}
@@ -665,66 +911,106 @@ export default function TestBrowser() {
                 <CardTitle className="text-white flex items-center gap-2">
                   <Monitor className="w-5 h-5" />
                   Live Browser View
-                  {liveViewUrl && (
-                    <Badge variant="outline" className="text-green-400 border-green-400">
+                  {(liveViewUrl || testScriptLiveViewUrl) && (
+                    <Badge
+                      variant="outline"
+                      className="text-green-400 border-green-400"
+                    >
                       LIVE
                     </Badge>
                   )}
                   {showSecondaryTab && (
-                    <Badge variant="outline" className="text-blue-400 border-blue-400">
+                    <Badge
+                      variant="outline"
+                      className="text-blue-400 border-blue-400"
+                    >
                       DUAL VIEW
+                    </Badge>
+                  )}
+                  {automation.running && (
+                    <Badge
+                      variant="outline"
+                      className="text-purple-400 border-purple-400"
+                    >
+                      AUTOMATING
                     </Badge>
                   )}
                 </CardTitle>
               </CardHeader>
-              <CardContent className={showSecondaryTab ? "h-[800px] space-y-4" : "h-[800px]"}>
+              <CardContent
+                className={
+                  showSecondaryTab ? "h-[800px] space-y-4" : "h-[800px]"
+                }
+              >
                 {showManualIntervention && testScriptLiveViewUrl ? (
                   <div className="h-full">
                     <div className="mb-4 p-4 bg-yellow-900/50 rounded-lg border border-yellow-500/30">
-                      <h3 className="text-lg font-semibold text-yellow-300 mb-2">Manual Action Required</h3>
+                      <h3 className="text-lg font-semibold text-yellow-300 mb-2">
+                        Manual Login Required
+                      </h3>
                       <p className="text-yellow-200">{automationStatus}</p>
                       <p className="text-sm text-yellow-200 mt-2">
-                        Complete the login above. Automation will continue automatically once login is detected.
+                        Please complete login manually above. Enhanced
+                        automation will start automatically once you're logged
+                        in and on the X home page.
                       </p>
                     </div>
                     <iframe
                       src={testScriptLiveViewUrl}
                       className="w-full h-[680px] border-0 rounded-lg bg-white"
-                      title="Test Script Manual Intervention"
+                      title="Manual Login Required"
                       allow="camera; microphone; display-capture; clipboard-read; clipboard-write"
                       sandbox="allow-same-origin allow-scripts"
                     />
                   </div>
-                ) : liveViewUrl ? (
+                ) : liveViewUrl || testScriptLiveViewUrl ? (
                   showSecondaryTab ? (
                     <div className="h-full space-y-4">
                       {/* Main X Tab */}
                       <div className="h-[48%]">
                         <div className="flex items-center gap-2 mb-2">
-                          <Badge variant="outline" className="text-purple-400 border-purple-400">
+                          <Badge
+                            variant="outline"
+                            className="text-purple-400 border-purple-400"
+                          >
                             X Tab
                           </Badge>
-                          <span className="text-sm text-gray-400">Main automation view</span>
+                          <span className="text-sm text-gray-400">
+                            Main automation view
+                          </span>
+                          {automation.running && (
+                            <Badge
+                              variant="outline"
+                              className="text-green-400 border-green-400 text-xs"
+                            >
+                              ACTIVE
+                            </Badge>
+                          )}
                         </div>
                         <iframe
                           ref={iframeRef}
-                          src={liveViewUrl}
+                          src={liveViewUrl || testScriptLiveViewUrl}
                           className="w-full h-full border-0 rounded-lg bg-white"
                           title="Browserbase Live View - X Tab"
                           allow="camera; microphone; display-capture"
                         />
                       </div>
-                      
+
                       {/* Secondary Tab */}
                       <div className="h-[48%]">
                         <div className="flex items-center gap-2 mb-2">
-                          <Badge variant="outline" className="text-blue-400 border-blue-400">
+                          <Badge
+                            variant="outline"
+                            className="text-blue-400 border-blue-400"
+                          >
                             {secondaryTabName}
                           </Badge>
-                          <span className="text-sm text-gray-400">Secondary tab live view</span>
+                          <span className="text-sm text-gray-400">
+                            Secondary tab live view
+                          </span>
                         </div>
                         <iframe
-                          src={secondaryTabUrl || ''}
+                          src={secondaryTabUrl || ""}
                           className="w-full h-full border-0 rounded-lg bg-white"
                           title={`Browserbase Live View - ${secondaryTabName}`}
                           allow="camera; microphone; display-capture"
@@ -734,7 +1020,7 @@ export default function TestBrowser() {
                   ) : (
                     <iframe
                       ref={iframeRef}
-                      src={liveViewUrl}
+                      src={liveViewUrl || testScriptLiveViewUrl}
                       className="w-full h-full border-0 rounded-lg bg-white"
                       title="Browserbase Live View"
                       allow="camera; microphone; display-capture"
@@ -745,13 +1031,14 @@ export default function TestBrowser() {
                     <div className="text-center">
                       <Monitor className="w-16 h-16 text-gray-500 mx-auto mb-4" />
                       <h3 className="text-lg font-semibold text-gray-300 mb-2">
-                        {status.isConnected ? 'Starting Live View...' : 'No Active Session'}
+                        {status.isConnected
+                          ? "Starting Live View..."
+                          : "No Active Session"}
                       </h3>
                       <p className="text-gray-500">
-                        {status.isConnected 
-                          ? 'Live browser view will appear here shortly'
-                          : 'Connect to Browserbase to see live browser view'
-                        }
+                        {status.isConnected
+                          ? "Live browser view will appear here shortly"
+                          : "Connect to Browserbase to see live browser view"}
                       </p>
                     </div>
                   </div>

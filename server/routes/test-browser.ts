@@ -4,245 +4,12 @@ import WebSocket from "ws";
 import { Browserbase } from "@browserbasehq/sdk";
 import { chromium } from "playwright-core";
 import { Page, Browser, BrowserContext } from "playwright-core";
-import { AIReplyService } from '../services/aiService';
+import { AIReplyService } from "../services/aiService";
 import { db } from "../db";
-import { browserSessions } from "@shared/schema";
+import { browserSessions } from "../../shared/schema";
 import { eq } from "drizzle-orm";
-// Ghost cursor will be imported dynamically with error handling
 
 const router = Router();
-
-// Cookie management functions
-async function saveCookiesToDatabase(sessionId: string, page: Page) {
-  try {
-    console.log("💾 Saving cookies to database...");
-    
-    // Get all cookies from the browser context
-    const cookies = await page.context().cookies();
-    
-    // Filter for relevant cookies (X/Twitter domain)
-    const relevantCookies = cookies.filter(cookie => 
-      cookie.domain.includes('twitter.com') || 
-      cookie.domain.includes('x.com') ||
-      cookie.domain.includes('.twitter.com') ||
-      cookie.domain.includes('.x.com')
-    );
-    
-    console.log(`📊 Found ${relevantCookies.length} relevant cookies out of ${cookies.length} total`);
-    
-    // Add metadata for cookie validation
-    const cookieData = {
-      cookies: relevantCookies,
-      savedAt: new Date().toISOString(),
-      sessionId: sessionId,
-      domain: 'x.com'
-    };
-    
-    // Serialize cookies to JSON
-    const cookiesJson = JSON.stringify(cookieData);
-    
-    // Update the database record
-    await db
-      .update(browserSessions)
-      .set({ 
-        cookies: cookiesJson,
-        status: 'active'
-      })
-      .where(eq(browserSessions.sessionId, sessionId));
-    
-    console.log("✅ Cookies saved successfully to database");
-    return true;
-  } catch (error: any) {
-    console.error("❌ Failed to save cookies:", error.message);
-    return false;
-  }
-}
-
-async function loadCookiesFromDatabase(sessionId: string, page: Page) {
-  try {
-    console.log("📥 Loading cookies from database...");
-    
-    // Get cookies from database
-    const [session] = await db
-      .select()
-      .from(browserSessions)
-      .where(eq(browserSessions.sessionId, sessionId));
-    
-    if (!session || !session.cookies) {
-      console.log("⚠️ No cookies found in database");
-      return false;
-    }
-    
-    // Deserialize cookies with validation
-    const cookieData = JSON.parse(session.cookies);
-    
-    // Validate cookie data structure
-    if (!cookieData.cookies || !Array.isArray(cookieData.cookies)) {
-      console.log("❌ Invalid cookie data structure");
-      return false;
-    }
-    
-    // Check if cookies are too old (older than 7 days)
-    const savedAt = new Date(cookieData.savedAt);
-    const now = new Date();
-    const daysDiff = (now.getTime() - savedAt.getTime()) / (1000 * 3600 * 24);
-    
-    if (daysDiff > 7) {
-      console.log(`⚠️ Cookies are ${Math.round(daysDiff)} days old, may be expired`);
-    }
-    
-    const cookies = cookieData.cookies;
-    console.log(`📊 Loading ${cookies.length} cookies from database (saved ${Math.round(daysDiff)} days ago)`);
-    
-    // Filter out expired cookies
-    const validCookies = cookies.filter(cookie => {
-      if (cookie.expires && cookie.expires > 0) {
-        const expireDate = new Date(cookie.expires * 1000);
-        return expireDate > now;
-      }
-      return true; // Session cookies or cookies without expiration
-    });
-    
-    if (validCookies.length !== cookies.length) {
-      console.log(`📊 Filtered out ${cookies.length - validCookies.length} expired cookies`);
-    }
-    
-    if (validCookies.length === 0) {
-      console.log("❌ All cookies have expired");
-      return false;
-    }
-    
-    // Add cookies to browser context
-    await page.context().addCookies(validCookies);
-    
-    console.log("✅ Cookies loaded successfully from database");
-    return true;
-  } catch (error: any) {
-    console.error("❌ Failed to load cookies:", error.message);
-    return false;
-  }
-}
-
-async function createBrowserSessionRecord(sessionId: string, automationId: number = 1) {
-  try {
-    console.log("📝 Creating browser session record...");
-    
-    const [newSession] = await db
-      .insert(browserSessions)
-      .values({
-        automationId: automationId,
-        sessionId: sessionId,
-        status: 'starting',
-        browserUrl: null,
-        cookies: null,
-      })
-      .returning();
-    
-    console.log("✅ Browser session record created:", newSession.id);
-    return newSession;
-  } catch (error: any) {
-    console.error("❌ Failed to create browser session record:", error.message);
-    return null;
-  }
-}
-
-async function validateCookies(page: Page) {
-  try {
-    console.log("🔍 Validating cookies by checking login status...");
-    
-    // First, check if we have any relevant cookies
-    const currentCookies = await page.context().cookies();
-    const xCookies = currentCookies.filter(cookie => 
-      cookie.domain.includes('twitter.com') || 
-      cookie.domain.includes('x.com') ||
-      cookie.domain.includes('.twitter.com') ||
-      cookie.domain.includes('.x.com')
-    );
-    
-    if (xCookies.length === 0) {
-      console.log("❌ No X/Twitter cookies found");
-      return false;
-    }
-    
-    console.log(`📊 Found ${xCookies.length} X/Twitter cookies, validating...`);
-    
-    // Navigate to X home page to check if cookies are valid
-    await page.goto('https://x.com/home', {
-      waitUntil: 'networkidle',
-      timeout: 30000
-    });
-    
-    // Wait for page to fully load
-    await page.waitForTimeout(3000);
-    
-    // Check if we're logged in by looking for authenticated elements
-    const isLoggedIn = await checkIfLoggedIn(page);
-    
-    if (isLoggedIn) {
-      console.log("✅ Cookies are valid - user is logged in");
-      
-      // Additional verification: check for authentication tokens
-      const hasAuthTokens = xCookies.some(cookie => 
-        cookie.name.includes('auth_token') || 
-        cookie.name.includes('ct0') || 
-        cookie.name.includes('_twitter_sess')
-      );
-      
-      if (hasAuthTokens) {
-        console.log("✅ Authentication tokens found in cookies");
-      }
-      
-      return true;
-    } else {
-      console.log("❌ Cookies are invalid or expired - user is not logged in");
-      
-      // Check if we're on login page (indicates session expired)
-      const currentUrl = await page.url();
-      if (currentUrl.includes('/login') || currentUrl.includes('/flow')) {
-        console.log("❌ Redirected to login page - session definitely expired");
-      }
-      
-      return false;
-    }
-  } catch (error: any) {
-    console.error("❌ Cookie validation failed:", error.message);
-    
-    // Try to determine if it's a network issue or auth issue
-    const currentUrl = await page.url().catch(() => 'unknown');
-    if (currentUrl.includes('/login') || currentUrl.includes('/flow')) {
-      console.log("❌ Validation failed due to expired session");
-    } else {
-      console.log("❌ Validation failed due to network/technical issue");
-    }
-    
-    return false;
-  }
-}
-
-async function checkIfLoggedIn(page: Page) {
-  try {
-    // Check for authenticated elements
-    const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
-    const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
-    const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
-    const tweetButton = await page.$('[data-testid="tweetButtonInline"]');
-    
-    // Check URL for authenticated state
-    const currentUrl = await page.url();
-    const isAuthenticatedUrl = (
-      currentUrl.includes('/home') || 
-      currentUrl.includes('/following') ||
-      currentUrl.includes('/notifications') ||
-      currentUrl.includes('/messages') ||
-      (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/flow') && !currentUrl.includes('/logout'))
-    );
-    
-    return !!(homeButton || profileButton || composeButton || tweetButton || isAuthenticatedUrl);
-  } catch (error: any) {
-    console.error("❌ Login check failed:", error.message);
-    return false;
-  }
-}
 
 // Browserbase configuration
 const browserbase = new Browserbase({
@@ -265,23 +32,38 @@ let testBrowser: Browser | null = null;
 let testContext: BrowserContext | null = null;
 let testPage: Page | null = null;
 
+// Automation state management
+let isAutomationPaused = false;
+let automationState = {
+  replies: 0,
+  likes: 0,
+  follows: 0,
+  targetReplies: 100,
+  targetLikes: 100,
+  targetFollows: 100,
+  sessionStartTime: 0,
+  currentPhase: "idle",
+  energyLevel: 100,
+  focusLevel: 100,
+};
+
 // Request schemas
 const navigateSchema = z.object({
-  url: z.string().url()
+  url: z.string().url(),
 });
 
 const controlSchema = z.object({
-  type: z.enum(['click', 'type', 'scroll', 'key']),
+  type: z.enum(["click", "type", "scroll", "key"]),
   x: z.number().optional(),
   y: z.number().optional(),
   text: z.string().optional(),
   deltaY: z.number().optional(),
-  key: z.string().optional()
+  key: z.string().optional(),
 });
 
 const automationSchema = z.object({
   username: z.string().min(1),
-  password: z.string().min(1)
+  password: z.string().min(1),
 });
 
 // WebSocket handler for browser control
@@ -289,45 +71,47 @@ export function handleBrowserWebSocket(ws: WebSocket) {
   console.log("Browser control WebSocket connected");
   streamingSockets.add(ws);
 
-  ws.on('message', async (message) => {
+  ws.on("message", async (message) => {
     try {
       const data = JSON.parse(message.toString());
 
-      if (data.type === 'browser_control' && currentPage) {
+      if (data.type === "browser_control" && currentPage) {
         const { action } = data;
 
         switch (action.type) {
-          case 'click':
+          case "click":
             await currentPage.mouse.click(action.x, action.y);
             console.log(`Browser click at ${action.x}, ${action.y}`);
             break;
 
-          case 'type':
+          case "type":
             await currentPage.keyboard.type(action.text);
             console.log(`Browser type: ${action.text}`);
             break;
 
-          case 'scroll':
+          case "scroll":
             await currentPage.mouse.wheel(0, action.deltaY);
             console.log(`Browser scroll: ${action.deltaY}`);
             break;
 
-          case 'key':
+          case "key":
             await currentPage.keyboard.press(action.key);
             console.log(`Browser key: ${action.key}`);
             break;
         }
       }
     } catch (error: any) {
-      console.error('WebSocket message handling error:', error);
-      ws.send(JSON.stringify({
-        type: 'error',
-        message: error.message
-      }));
+      console.error("WebSocket message handling error:", error);
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          message: error.message,
+        }),
+      );
     }
   });
 
-  ws.on('close', () => {
+  ws.on("close", () => {
     console.log("Browser control WebSocket disconnected");
     streamingSockets.delete(ws);
   });
@@ -335,7 +119,7 @@ export function handleBrowserWebSocket(ws: WebSocket) {
 
 // Helper function to broadcast messages to WebSocket clients
 function broadcastToClients(message: any) {
-  streamingSockets.forEach(ws => {
+  streamingSockets.forEach((ws) => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message));
     }
@@ -385,11 +169,13 @@ async function cleanupSession() {
     currentBrowser = null;
   }
 
-  // CORRECT: Properly terminate Browserbase session
+  // Properly terminate Browserbase session
   if (currentSession) {
     try {
       console.log("Terminating Browserbase session:", currentSession.id);
-      await browserbase.sessions.update(currentSession.id, { status: 'REQUEST_TERMINATION' });
+      await browserbase.sessions.update(currentSession.id, {
+        status: "REQUEST_TERMINATION",
+      });
       console.log("Browserbase session terminated successfully");
     } catch (e) {
       console.log("Browserbase session termination error:", e);
@@ -400,14 +186,143 @@ async function cleanupSession() {
   isConnected = false;
 
   // Notify all connected clients
-  streamingSockets.forEach(ws => {
+  streamingSockets.forEach((ws) => {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'session_closed',
-        message: 'Browser session has been terminated'
-      }));
+      ws.send(
+        JSON.stringify({
+          type: "session_closed",
+          message: "Browser session has been terminated",
+        }),
+      );
     }
   });
+}
+
+// Cookie management functions
+async function saveCookiesToDatabase(sessionId: string, page: Page) {
+  try {
+    console.log("💾 Saving cookies to database...");
+
+    const cookies = await page.context().cookies();
+
+    // Filter X/Twitter related cookies only
+    const xCookies = cookies.filter(
+      (cookie) =>
+        cookie.domain.includes("x.com") ||
+        cookie.domain.includes("twitter.com") ||
+        cookie.domain.includes(".x.com") ||
+        cookie.domain.includes(".twitter.com"),
+    );
+
+    if (xCookies.length === 0) {
+      console.log("⚠️ No X/Twitter cookies found to save");
+      return false;
+    }
+
+    const cookiesJson = JSON.stringify(xCookies);
+
+    // Update the browserSessions record with cookies
+    await db
+      .update(browserSessions)
+      .set({
+        cookies: cookiesJson,
+        updatedAt: new Date(),
+      })
+      .where(eq(browserSessions.sessionId, sessionId));
+
+    console.log(`✅ Saved ${xCookies.length} X/Twitter cookies to database`);
+    return true;
+  } catch (error: any) {
+    console.error("❌ Failed to save cookies:", error.message);
+    return false;
+  }
+}
+
+async function loadCookiesFromDatabase(sessionId: string, page: Page) {
+  try {
+    console.log("🔄 Loading cookies from database...");
+
+    const sessionRecord = await db
+      .select()
+      .from(browserSessions)
+      .where(eq(browserSessions.sessionId, sessionId))
+      .limit(1);
+
+    if (sessionRecord.length === 0 || !sessionRecord[0].cookies) {
+      console.log("⚠️ No saved cookies found in database");
+      return false;
+    }
+
+    const cookies = JSON.parse(sessionRecord[0].cookies);
+
+    if (!Array.isArray(cookies) || cookies.length === 0) {
+      console.log("⚠️ Invalid or empty cookies data");
+      return false;
+    }
+
+    // Add cookies to the browser context
+    await page.context().addCookies(cookies);
+
+    console.log(`✅ Loaded ${cookies.length} cookies from database`);
+    return true;
+  } catch (error: any) {
+    console.error("❌ Failed to load cookies:", error.message);
+    return false;
+  }
+}
+
+async function validateCookies(page: Page) {
+  try {
+    console.log("🔍 Validating cookies...");
+
+    // Navigate to X home page to test cookies
+    await page.goto("https://x.com/home", {
+      waitUntil: "networkidle",
+      timeout: 30000,
+    });
+
+    await page.waitForTimeout(3000);
+
+    // Check if we're logged in by looking for authenticated elements
+    const isLoggedIn = await checkIfLoggedIn(page);
+
+    if (isLoggedIn) {
+      console.log("✅ Cookies are valid - user is logged in");
+      return true;
+    } else {
+      console.log("❌ Cookies are invalid or expired");
+      return false;
+    }
+  } catch (error: any) {
+    console.error("❌ Cookie validation failed:", error.message);
+    return false;
+  }
+}
+
+async function checkIfLoggedIn(page: Page) {
+  try {
+    // Check for authenticated elements
+    const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
+    const profileButton = await page.$(
+      '[data-testid="AppTabBar_Profile_Link"]',
+    );
+    const composeButton = await page.$(
+      '[data-testid="SideNav_NewTweet_Button"]',
+    );
+
+    // Check URL
+    const currentUrl = await page.url();
+    const isAuthenticatedUrl =
+      currentUrl.includes("/home") ||
+      currentUrl.includes("/following") ||
+      (currentUrl.includes("x.com") && !currentUrl.includes("/login"));
+
+    return (
+      !!(homeButton || profileButton || composeButton) && isAuthenticatedUrl
+    );
+  } catch (error) {
+    return false;
+  }
 }
 
 // Get browser status
@@ -440,16 +355,19 @@ router.get("/status", async (req, res) => {
       title,
       browserEndpoint,
       connectedClients,
-      status: isConnected ? "connected" : "disconnected"
+      status: isConnected ? "connected" : "disconnected",
+      automationState: {
+        ...automationState,
+        isPaused: isAutomationPaused,
+      },
     });
-
   } catch (error: any) {
     console.error("Status check error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to get browser status",
       error: error.message,
-      status: "error"
+      status: "error",
     });
   }
 });
@@ -457,29 +375,29 @@ router.get("/status", async (req, res) => {
 // Test connection to Browserbase with enhanced stealth
 router.post("/test-connection", async (req, res) => {
   try {
-    console.log("Testing Browserbase connection with advanced stealth...");
+    console.log("Testing Browserbase connection with Pro plan features...");
 
     // Cleanup existing session
     await cleanupSession();
 
-    // Create new Browserbase session with Developer plan settings
-    console.log("Creating new Browserbase session with Developer plan settings...");
+    // Create new Browserbase session with Pro plan settings
+    console.log("Creating new Browserbase session with Pro plan settings...");
     currentSession = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
-        // Basic stealth mode (enabled by default in Developer plan)
-        viewport: { 
-          width: 1280, 
-          height: 720 
+        viewport: {
+          width: 1280,
+          height: 720,
         },
         fingerprint: {
           devices: ["desktop"],
           locales: ["en-US"],
-          operatingSystems: ["windows"]
-        }
+          operatingSystems: ["windows"],
+        },
       },
-      proxies: true, // 1 GB included in Developer plan
-      timeout: 3600 // 1 hour in seconds
+      proxies: true, // Pro plan feature
+      timeout: 21600, // 6 hours in seconds (Pro plan allows longer sessions)
+      keepAlive: true, // Pro plan feature for session persistence
     });
 
     console.log(`Browserbase session created: ${currentSession.id}`);
@@ -489,20 +407,12 @@ router.post("/test-connection", async (req, res) => {
     currentBrowser = await chromium.connectOverCDP(currentSession.connectUrl);
     currentContext = currentBrowser.contexts()[0];
     currentPage = currentContext.pages()[0];
-    
-    // Try to load cookies from database if session exists
-    const cookiesLoaded = await loadCookiesFromDatabase(currentSession.id, currentPage);
-    if (cookiesLoaded) {
-      console.log("✅ Loaded existing cookies for session");
-    } else {
-      console.log("⚠️ No existing cookies found, fresh session");
-    }
 
-    // Set session timeout
+    // Set session timeout for 6 hours
     sessionTimeout = setTimeout(async () => {
       console.log("Session timeout reached, cleaning up...");
       await cleanupSession();
-    }, 3600000); // 1 hour
+    }, 21600000); // 6 hours
 
     console.log("Connected to Browserbase session successfully");
     isConnected = true;
@@ -519,16 +429,16 @@ router.post("/test-connection", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Successfully connected to Browserbase with Developer plan features",
+      message: "Successfully connected to Browserbase with Pro plan features",
       sessionId: currentSession.id,
       liveViewUrl: liveViewUrl,
       stealthEnabled: true,
-      captchaSolving: true,
+      captchaSolving: false, // Manual solving preferred
       proxyEnabled: true,
-      timeout: "1 hour",
-      status: "connected"
+      timeout: "6 hours",
+      keepAlive: true,
+      status: "connected",
     });
-
   } catch (error: any) {
     console.error("Browserbase connection error:", error);
     await cleanupSession();
@@ -537,7 +447,7 @@ router.post("/test-connection", async (req, res) => {
       success: false,
       message: "Failed to connect to Browserbase",
       error: error.message,
-      status: "disconnected"
+      status: "disconnected",
     });
   }
 });
@@ -550,20 +460,20 @@ router.post("/navigate", async (req, res) => {
     if (!currentPage || !isConnected) {
       return res.status(400).json({
         success: false,
-        message: "No active browser session. Please test connection first."
+        message: "No active browser session. Please test connection first.",
       });
     }
 
     console.log("Navigating to:", url);
 
     // Navigate with timeout
-    await currentPage.goto(url, { 
-      waitUntil: 'networkidle',
-      timeout: 30000 
+    await currentPage.goto(url, {
+      waitUntil: "networkidle",
+      timeout: 30000,
     });
 
     // Wait a bit for page to fully load
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     const currentUrl = await currentPage.url();
     const title = await currentPage.title();
@@ -575,16 +485,15 @@ router.post("/navigate", async (req, res) => {
       message: "Navigation successful",
       currentUrl,
       title,
-      status: "navigated"
+      status: "navigated",
     });
-
   } catch (error: any) {
     console.error("Navigation error:", error);
     res.status(500).json({
       success: false,
       message: "Navigation failed",
       error: error.message,
-      status: "error"
+      status: "error",
     });
   }
 });
@@ -597,33 +506,33 @@ router.post("/control", async (req, res) => {
     if (!currentPage || !isConnected) {
       return res.status(400).json({
         success: false,
-        message: "No active browser session. Please test connection first."
+        message: "No active browser session. Please test connection first.",
       });
     }
 
     switch (action.type) {
-      case 'click':
+      case "click":
         if (action.x !== undefined && action.y !== undefined) {
           await currentPage.mouse.click(action.x, action.y);
           console.log(`Manual click at ${action.x}, ${action.y}`);
         }
         break;
 
-      case 'type':
+      case "type":
         if (action.text) {
           await currentPage.keyboard.type(action.text);
           console.log(`Manual type: ${action.text}`);
         }
         break;
 
-      case 'scroll':
+      case "scroll":
         if (action.deltaY !== undefined) {
           await currentPage.mouse.wheel(0, action.deltaY);
           console.log(`Manual scroll: ${action.deltaY}`);
         }
         break;
 
-      case 'key':
+      case "key":
         if (action.key) {
           await currentPage.keyboard.press(action.key);
           console.log(`Manual key: ${action.key}`);
@@ -634,15 +543,14 @@ router.post("/control", async (req, res) => {
     res.json({
       success: true,
       message: `${action.type} action executed`,
-      action
+      action,
     });
-
   } catch (error: any) {
     console.error("Control action error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to execute control action",
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -653,7 +561,7 @@ router.get("/screenshot", async (req, res) => {
     if (!currentPage || !isConnected) {
       return res.status(400).json({
         success: false,
-        message: "No active browser session. Please test connection first."
+        message: "No active browser session. Please test connection first.",
       });
     }
 
@@ -661,7 +569,7 @@ router.get("/screenshot", async (req, res) => {
 
     const screenshot = await currentPage.screenshot({
       fullPage: false,
-      type: 'png'
+      type: "png",
     });
 
     const currentUrl = await currentPage.url();
@@ -669,18 +577,17 @@ router.get("/screenshot", async (req, res) => {
 
     res.json({
       success: true,
-      screenshot: `data:image/png;base64,${screenshot.toString('base64')}`,
+      screenshot: `data:image/png;base64,${screenshot.toString("base64")}`,
       currentUrl,
       title,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-
   } catch (error: any) {
     console.error("Screenshot error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to take screenshot",
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -691,7 +598,7 @@ router.post("/start-streaming", async (req, res) => {
     if (!currentSession || !isConnected) {
       return res.status(400).json({
         success: false,
-        message: "No active browser session. Please test connection first."
+        message: "No active browser session. Please test connection first.",
       });
     }
 
@@ -709,7 +616,7 @@ router.post("/start-streaming", async (req, res) => {
         success: false,
         message: "Failed to obtain live view URL",
         error: debugError,
-        details: "Debug URL not available for this session"
+        details: "Debug URL not available for this session",
       });
     }
 
@@ -717,19 +624,21 @@ router.post("/start-streaming", async (req, res) => {
       return res.status(500).json({
         success: false,
         message: "Live view URL not available",
-        details: "Session may not be ready for debugging"
+        details: "Session may not be ready for debugging",
       });
     }
 
     // Broadcast live view URL to all connected WebSocket clients
-    streamingSockets.forEach(ws => {
+    streamingSockets.forEach((ws) => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'live_view_url',
-          url: liveViewUrl,
-          message: 'Browserbase live view ready for iframe embedding',
-          sessionId: currentSession.id
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "live_view_url",
+            url: liveViewUrl,
+            message: "Browserbase live view ready for iframe embedding",
+            sessionId: currentSession.id,
+          }),
+        );
       }
     });
 
@@ -741,16 +650,15 @@ router.post("/start-streaming", async (req, res) => {
       message: "Live view started",
       liveViewUrl,
       sessionId: currentSession.id,
-      status: "streaming"
+      status: "streaming",
     });
-
   } catch (error: any) {
     console.error("Start live view error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to start live view",
       error: error.message,
-      details: "Ensure Browserbase session is properly initialized"
+      details: "Ensure Browserbase session is properly initialized",
     });
   }
 });
@@ -761,19 +669,21 @@ router.post("/stop-streaming", async (req, res) => {
     if (!isStreaming) {
       return res.json({
         success: true,
-        message: "Live view not active"
+        message: "Live view not active",
       });
     }
 
     console.log("Stopping Browserbase live view...");
 
     // Notify all connected clients that live view is stopping
-    streamingSockets.forEach(ws => {
+    streamingSockets.forEach((ws) => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'live_view_stopped',
-          message: 'Live view has been stopped'
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "live_view_stopped",
+            message: "Live view has been stopped",
+          }),
+        );
       }
     });
 
@@ -783,68 +693,171 @@ router.post("/stop-streaming", async (req, res) => {
     res.json({
       success: true,
       message: "Live view stopped",
-      status: "stopped"
+      status: "stopped",
     });
-
   } catch (error: any) {
     console.error("Stop live view error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to stop live view",
-      error: error.message
+      error: error.message,
     });
   }
 });
 
-// Twitter automation test
-router.post("/test-automation", async (req, res) => {
+// Pause automation
+router.post("/pause-automation", async (req, res) => {
   try {
-    const { username, password } = automationSchema.parse(req.body);
+    isAutomationPaused = true;
 
-    if (!currentPage || !isConnected) {
-      return res.status(400).json({
-        success: false,
-        message: "No active browser session. Please test connection first."
-      });
+    // Save current state to database if we have an active session
+    if (testSession) {
+      await saveCookiesToDatabase(testSession.id, testPage!);
     }
 
-    console.log("Starting comprehensive X/Twitter automation with automated login...");
-
-    // Start live streaming automatically
-    streamingSockets.forEach(ws => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'start_live_stream'
-        }));
-      }
+    broadcastToClients({
+      type: "automation_paused",
+      message: "Automation paused by user",
+      automationState: {
+        ...automationState,
+        isPaused: true,
+      },
     });
-
-    await performTwitterAutomation(username, password);
 
     res.json({
       success: true,
-      message: "Twitter automation completed successfully",
-      status: "completed"
+      message: "Automation paused successfully",
+      automationState: {
+        ...automationState,
+        isPaused: true,
+      },
     });
-
   } catch (error: any) {
-    console.error("Test automation error:", error);
-
-    // Stop streaming on error
-    streamingSockets.forEach(ws => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'automation_error',
-          error: error.message
-        }));
-      }
-    });
-
+    console.error("Pause automation error:", error);
     res.status(500).json({
       success: false,
-      message: "Twitter automation failed",
+      message: "Failed to pause automation",
       error: error.message,
-      status: "failed"
+    });
+  }
+});
+
+// Resume automation
+router.post("/resume-automation", async (req, res) => {
+  try {
+    isAutomationPaused = false;
+
+    broadcastToClients({
+      type: "automation_resumed",
+      message: "Automation resumed by user",
+      automationState: {
+        ...automationState,
+        isPaused: false,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "Automation resumed successfully",
+      automationState: {
+        ...automationState,
+        isPaused: false,
+      },
+    });
+  } catch (error: any) {
+    console.error("Resume automation error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to resume automation",
+      error: error.message,
+    });
+  }
+});
+
+// Reconnect to existing session with cookies
+router.post("/reconnect-session", async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: "Session ID is required",
+      });
+    }
+
+    console.log(`🔄 Reconnecting to session: ${sessionId}`);
+
+    // Create new browser session
+    const session = await browserbase.sessions.create({
+      projectId: process.env.BROWSERBASE_PROJECT_ID!,
+      browserSettings: {
+        viewport: { width: 1280, height: 720 },
+        fingerprint: {
+          devices: ["desktop"],
+          locales: ["en-US"],
+          operatingSystems: ["windows"],
+        },
+      },
+      proxies: true,
+      timeout: 21600,
+      keepAlive: true,
+    });
+
+    const browser = await chromium.connectOverCDP(session.connectUrl);
+    const context = browser.contexts()[0];
+    const page = context.pages()[0];
+
+    // Load cookies from database
+    const cookiesLoaded = await loadCookiesFromDatabase(sessionId, page);
+
+    if (cookiesLoaded) {
+      // Validate cookies
+      const cookiesValid = await validateCookies(page);
+
+      if (cookiesValid) {
+        // Store session globally
+        testSession = session;
+        testBrowser = browser;
+        testContext = context;
+        testPage = page;
+
+        const liveViewLinks = await browserbase.sessions.debug(session.id);
+        const liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+
+        res.json({
+          success: true,
+          message: "Successfully reconnected with saved cookies",
+          sessionId: session.id,
+          liveViewUrl: liveViewUrl,
+          cookiesLoaded: true,
+          cookiesValid: true,
+        });
+      } else {
+        res.json({
+          success: false,
+          message:
+            "Saved cookies are invalid or expired. Manual login required.",
+          sessionId: session.id,
+          cookiesLoaded: true,
+          cookiesValid: false,
+        });
+      }
+    } else {
+      res.json({
+        success: false,
+        message: "No saved cookies found. Manual login required.",
+        sessionId: session.id,
+        cookiesLoaded: false,
+        cookiesValid: false,
+      });
+    }
+  } catch (error: any) {
+    console.error("Reconnect session error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to reconnect session",
+      error: error.message,
     });
   }
 });
@@ -859,7 +872,9 @@ router.delete("/session", async (req, res) => {
     if (testSession) {
       try {
         console.log("Terminating test session:", testSession.id);
-        await browserbase.sessions.update(testSession.id, { status: 'REQUEST_TERMINATION' });
+        await browserbase.sessions.update(testSession.id, {
+          status: "REQUEST_TERMINATION",
+        });
         testSession = null;
         testBrowser = null;
         testContext = null;
@@ -872,209 +887,1046 @@ router.delete("/session", async (req, res) => {
     res.json({
       success: true,
       message: "Browser session terminated successfully",
-      status: "closed"
+      status: "closed",
     });
-
   } catch (error: any) {
     console.error("Session termination error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to terminate browser session",
-      error: error.message
+      error: error.message,
     });
   }
 });
 
-// Twitter automation implementation
-async function performTwitterAutomation(username: string, password: string) {
-  if (!currentPage) throw new Error("No active page");
-
+// Enhanced Test Script - Starts automation from authenticated state
+router.post("/test-script", async (req, res) => {
   try {
-    // Step 1: Navigate to X login page
-    console.log("STEP 1: Navigating to X login page...");
-    streamingSockets.forEach(ws => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'automation_status',
-          status: 'navigating',
-          message: 'Navigating to X/Twitter login page...',
-          step: 1,
-          totalSteps: 8,
-          currentAction: 'Loading login page'
-        }));
+    console.log("🚀 Starting enhanced automation from authenticated state...");
+
+    // Reset automation state
+    automationState = {
+      replies: 0,
+      likes: 0,
+      follows: 0,
+      targetReplies: 100,
+      targetLikes: 100,
+      targetFollows: 100,
+      sessionStartTime: Date.now(),
+      currentPhase: "starting",
+      energyLevel: 100,
+      focusLevel: 100,
+    };
+    isAutomationPaused = false;
+
+    // 1. Create Browserbase session
+    const session = await browserbase.sessions.create({
+      projectId: process.env.BROWSERBASE_PROJECT_ID!,
+      browserSettings: {
+        viewport: { width: 1280, height: 720 },
+        fingerprint: {
+          devices: ["desktop"],
+          locales: ["en-US"],
+          operatingSystems: ["windows"],
+        },
+        solveCaptchas: false, // Manual solving preferred
+      },
+      proxies: true,
+      timeout: 21600, // 6 hours
+      keepAlive: true,
+    });
+
+    console.log("✅ Session created:", session.id);
+
+    // 2. Connect to browser
+    const browser = await chromium.connectOverCDP(session.connectUrl);
+    const defaultContext = browser.contexts()[0];
+    const page = defaultContext.pages()[0];
+
+    // 3. Initialize ghost cursor
+    console.log("🎯 Initializing ghost cursor...");
+    let cursor;
+
+    try {
+      const { createCursor } = await import("ghost-cursor-playwright");
+      cursor = await createCursor(page);
+
+      if (cursor && typeof cursor.click === "function") {
+        console.log("✅ Ghost cursor initialized successfully");
+      } else {
+        throw new Error("Ghost cursor object invalid");
       }
+    } catch (error) {
+      console.log("⚠️ Ghost cursor failed, creating fallback:", error.message);
+
+      cursor = {
+        click: async (element) => {
+          await element.click();
+        },
+      };
+    }
+
+    // Store session globally
+    testSession = session;
+    testBrowser = browser;
+    testContext = defaultContext;
+    testPage = page;
+
+    // 4. Get live view URL
+    const liveViewLinks = await browserbase.sessions.debug(session.id);
+    const liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
+
+    // 5. Broadcast live view URL
+    broadcastToClients({
+      type: "live_view_url",
+      url: liveViewUrl,
+      message:
+        "Live view ready - please login manually and navigate to X home page",
+      sessionId: session.id,
     });
 
-    await currentPage.goto('https://twitter.com/i/flow/login', { 
-      waitUntil: 'networkidle',
-      timeout: 30000 
-    });
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // Step 2: Automated login
-    console.log("STEP 2: Starting automated login...");
-    streamingSockets.forEach(ws => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'automation_status',
-          status: 'logging_in',
-          message: 'Performing automated login...',
-          step: 2,
-          totalSteps: 8,
-          currentAction: 'Entering credentials'
-        }));
-      }
+    // 6. Navigate to X login page
+    await page.goto("https://x.com/i/flow/login", {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
     });
 
-    await performAutomatedLogin(username, password);
+    await page.waitForTimeout(3000);
 
-    // Step 3: Navigate to home feed
-    console.log("STEP 3: Navigating to home feed...");
-    await currentPage.goto('https://twitter.com/home', { 
-      waitUntil: 'networkidle',
-      timeout: 30000 
-    });
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // 7. Check if already logged in (from cookies)
+    const alreadyLoggedIn = await checkIfLoggedIn(page);
 
-    // Additional automation steps would continue here...
-    console.log("Twitter automation completed successfully");
+    if (alreadyLoggedIn) {
+      console.log("✅ Already logged in via cookies");
 
+      broadcastToClients({
+        type: "automation_progress",
+        message: "Already logged in! Starting automation immediately...",
+        step: "already_logged_in",
+        liveViewUrl: liveViewUrl,
+      });
+
+      res.json({
+        success: true,
+        status: "continuing_automation",
+        liveViewUrl: liveViewUrl,
+        message: "Already logged in, starting automation",
+        sessionId: session.id,
+      });
+
+      // Start automation immediately
+      await performEnhancedAutomation(page, session.id, liveViewUrl, cursor);
+    } else {
+      console.log("🔐 Manual login required");
+
+      broadcastToClients({
+        type: "automation_progress",
+        message:
+          "Please complete login manually and navigate to X home page. Automation will start when ready.",
+        step: "manual_login_required",
+        liveViewUrl: liveViewUrl,
+        sessionId: session.id,
+      });
+
+      res.json({
+        success: true,
+        status: "manual_login_required",
+        liveViewUrl: liveViewUrl,
+        message:
+          "Please complete login manually in the browser above, then automation will start automatically",
+        sessionId: session.id,
+      });
+
+      // Wait for manual login and start automation
+      waitForManualLoginAndStart(page, session.id, liveViewUrl, cursor);
+    }
   } catch (error: any) {
-    console.error('Twitter automation failed:', error);
-    throw new Error(`Twitter automation failed: ${error.message}`);
+    console.error("❌ Test script error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+// Wait for manual login and start automation
+async function waitForManualLoginAndStart(
+  page: Page,
+  sessionId: string,
+  liveViewUrl: string,
+  cursor: any,
+) {
+  try {
+    console.log("⏳ Waiting for manual login completion...");
+
+    const maxWait = 600000; // 10 minutes for manual login
+    const checkInterval = 5000; // 5 seconds
+    let elapsed = 0;
+
+    while (elapsed < maxWait && !isAutomationPaused) {
+      try {
+        const currentUrl = await page.url();
+        const isLoggedIn = await checkIfLoggedIn(page);
+
+        if (
+          isLoggedIn &&
+          (currentUrl.includes("/home") || currentUrl.includes("/following"))
+        ) {
+          console.log(
+            "✅ Manual login detected and user is on home/following page!",
+          );
+
+          // Save cookies after successful login
+          await saveCookiesToDatabase(sessionId, page);
+
+          broadcastToClients({
+            type: "automation_progress",
+            message: "Login detected! Starting enhanced automation...",
+            step: "login_complete_starting_automation",
+            liveViewUrl: liveViewUrl,
+          });
+
+          // Start the enhanced automation
+          await performEnhancedAutomation(page, sessionId, liveViewUrl, cursor);
+          return;
+        }
+
+        // Check for Cloudflare challenges
+        const cloudflareDetected = await detectCloudflareChallenge(page);
+        if (cloudflareDetected) {
+          broadcastToClients({
+            type: "automation_progress",
+            message: "Cloudflare challenge detected. Please complete manually.",
+            step: "cloudflare_challenge",
+            liveViewUrl: liveViewUrl,
+          });
+        }
+      } catch (checkError) {
+        console.log("⚠️ Login check error:", checkError.message);
+      }
+
+      await page.waitForTimeout(checkInterval);
+      elapsed += checkInterval;
+
+      // Update user every 30 seconds
+      if (elapsed % 30000 === 0) {
+        const remainingMinutes = Math.round((maxWait - elapsed) / 60000);
+        broadcastToClients({
+          type: "automation_progress",
+          message: `Waiting for manual login (${remainingMinutes} minutes remaining)...`,
+          step: "waiting_for_login",
+          liveViewUrl: liveViewUrl,
+        });
+      }
+    }
+
+    if (elapsed >= maxWait) {
+      broadcastToClients({
+        type: "automation_error",
+        error: "Manual login timeout - please try again",
+        sessionId: sessionId,
+        liveViewUrl: liveViewUrl,
+      });
+    }
+  } catch (error: any) {
+    console.error("❌ Manual login wait error:", error);
+    broadcastToClients({
+      type: "automation_error",
+      error: error.message,
+      sessionId: sessionId,
+      liveViewUrl: liveViewUrl,
+    });
   }
 }
 
-// Automated login implementation with Browserbase
-async function performAutomatedLogin(username: string, password: string) {
-  if (!currentPage) throw new Error("No active page");
-
+// Enhanced automation with human-like behavior and 6-hour operation
+async function performEnhancedAutomation(
+  page: Page,
+  sessionId: string,
+  liveViewUrl: string,
+  cursor: any,
+) {
   try {
-    console.log('Attempting automated login with username:', username);
+    console.log("🤖 Starting enhanced 6-hour automation cycle...");
 
-    // Step 1: Find and fill username field
-    console.log('Step 1: Looking for username field...');
-    const usernameSelectors = [
-      'input[name="text"]',
-      'input[autocomplete="username"]',
-      'input[data-testid="ocfEnterTextTextInput"]',
-      'input[type="text"]'
-    ];
+    automationState.currentPhase = "running";
+    automationState.sessionStartTime = Date.now();
 
-    let usernameField = null;
-    for (const selector of usernameSelectors) {
+    broadcastToClients({
+      type: "automation_progress",
+      message:
+        "Enhanced automation started! Target: 100 replies, 100 likes, 100 follows over 6 hours",
+      step: "automation_started",
+      liveViewUrl: liveViewUrl,
+      automationState: automationState,
+    });
+
+    // Main automation loop - runs for 6 hours or until targets met
+    const maxDuration = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxDuration && !isAutomationPaused) {
       try {
-        await currentPage.waitForSelector(selector, { timeout: 5000 });
-        usernameField = selector;
-        console.log(`Found username field: ${selector}`);
-        break;
-      } catch (e) {
-        continue;
+        // Check if targets are met
+        if (
+          automationState.replies >= automationState.targetReplies &&
+          automationState.likes >= automationState.targetLikes &&
+          automationState.follows >= automationState.targetFollows
+        ) {
+          console.log("🎉 All targets achieved!");
+          broadcastToClients({
+            type: "automation_complete",
+            message:
+              "All targets achieved! Continuing with random activities...",
+            sessionId: sessionId,
+            liveViewUrl: liveViewUrl,
+            automationState: automationState,
+          });
+
+          // Continue with random activities even after targets are met
+        }
+
+        // Simulate human energy/focus decline over time
+        const elapsedHours = (Date.now() - startTime) / (60 * 60 * 1000);
+        automationState.energyLevel = Math.max(20, 100 - elapsedHours * 15);
+        automationState.focusLevel = Math.max(30, 100 - elapsedHours * 12);
+
+        // Select next action based on current state and human-like behavior
+        const nextAction = selectNextAction();
+
+        console.log(
+          `🎯 Next action: ${nextAction} (Energy: ${Math.round(automationState.energyLevel)}%, Focus: ${Math.round(automationState.focusLevel)}%)`,
+        );
+
+        // Execute the selected action
+        await executeAction(page, sessionId, liveViewUrl, cursor, nextAction);
+
+        // Human-like pause between actions (varies based on energy/focus)
+        const pauseDuration = calculateHumanPause();
+        console.log(
+          `⏸️ Human-like pause: ${Math.round(pauseDuration / 1000)}s`,
+        );
+
+        broadcastToClients({
+          type: "automation_progress",
+          message: `Completed ${nextAction}. Pausing ${Math.round(pauseDuration / 1000)}s before next action...`,
+          step: "action_complete",
+          liveViewUrl: liveViewUrl,
+          automationState: automationState,
+        });
+
+        await page.waitForTimeout(pauseDuration);
+
+        // Check for pause requests
+        if (isAutomationPaused) {
+          console.log("⏸️ Automation paused by user");
+          await saveCookiesToDatabase(sessionId, page);
+
+          broadcastToClients({
+            type: "automation_paused",
+            message: "Automation paused by user. Session and progress saved.",
+            sessionId: sessionId,
+            liveViewUrl: liveViewUrl,
+            automationState: automationState,
+          });
+
+          // Wait for resume
+          while (isAutomationPaused) {
+            await page.waitForTimeout(5000);
+          }
+
+          console.log("▶️ Automation resumed");
+          broadcastToClients({
+            type: "automation_resumed",
+            message: "Automation resumed. Continuing from where we left off...",
+            sessionId: sessionId,
+            liveViewUrl: liveViewUrl,
+            automationState: automationState,
+          });
+        }
+      } catch (actionError: any) {
+        console.error("❌ Action execution error:", actionError.message);
+
+        // Human-like recovery - pause and try to continue
+        await page.waitForTimeout(10000 + Math.random() * 10000);
+
+        // Try to navigate back to home if we're lost
+        try {
+          const currentUrl = await page.url();
+          if (!currentUrl.includes("x.com") || currentUrl.includes("/login")) {
+            await page.goto("https://x.com/home", {
+              waitUntil: "networkidle",
+              timeout: 30000,
+            });
+            await page.waitForTimeout(3000);
+          }
+        } catch (recoveryError) {
+          console.error(
+            "❌ Recovery navigation failed:",
+            recoveryError.message,
+          );
+        }
       }
     }
 
-    if (!usernameField) {
-      throw new Error('Could not find username input field');
-    }
+    // Automation completed (either by time or user stop)
+    console.log("🏁 Enhanced automation cycle completed");
 
-    // Clear and fill username
-    await currentPage.fill(usernameField, username);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('Username entered:', username);
+    // Save final state
+    await saveCookiesToDatabase(sessionId, page);
 
-    // Step 2: Click Next button
-    console.log('Step 2: Looking for Next button...');
-    const nextSelectors = [
-      '[data-testid="LoginForm_Login_Button"]',
-      'button:has-text("Next")',
-      'div[role="button"]:has-text("Next")',
-      '[data-testid="ocfEnterTextNextButton"]'
-    ];
+    const finalStats = {
+      duration: Math.round((Date.now() - startTime) / (60 * 1000)), // minutes
+      replies: automationState.replies,
+      likes: automationState.likes,
+      follows: automationState.follows,
+      targetsAchieved: {
+        replies: automationState.replies >= automationState.targetReplies,
+        likes: automationState.likes >= automationState.targetLikes,
+        follows: automationState.follows >= automationState.targetFollows,
+      },
+    };
 
-    let nextClicked = false;
-    for (const selector of nextSelectors) {
-      try {
-        await currentPage.waitForSelector(selector, { timeout: 5000 });
-        await currentPage.click(selector);
-        nextClicked = true;
-        console.log(`Next button clicked: ${selector}`);
-        break;
-      } catch (e) {
-        continue;
-      }
-    }
-
-    if (!nextClicked) {
-      console.log('Next button not found, trying Enter key...');
-      await currentPage.keyboard.press('Enter');
-    }
-
-    // Wait for password field to appear
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // Step 3: Find and fill password field
-    console.log('Step 3: Looking for password field...');
-    const passwordSelectors = [
-      'input[type="password"]',
-      'input[name="password"]',
-      'input[autocomplete="current-password"]'
-    ];
-
-    let passwordField = null;
-    for (const selector of passwordSelectors) {
-      try {
-        await currentPage.waitForSelector(selector, { timeout: 5000 });
-        passwordField = selector;
-        console.log(`Found password field: ${selector}`);
-        break;
-      } catch (e) {
-        continue;
-      }
-    }
-
-    if (!passwordField) {
-      throw new Error('Could not find password input field');
-    }
-
-    // Fill password using Browserbase (should work better than Bright Data)
-    await currentPage.fill(passwordField, password);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('Password entered');
-
-    // Step 4: Click Login button
-    console.log('Step 4: Looking for Login button...');
-    const loginSelectors = [
-      '[data-testid="LoginForm_Login_Button"]',
-      'button:has-text("Log in")',
-      'div[role="button"]:has-text("Log in")',
-      'button[type="submit"]'
-    ];
-
-    let loginClicked = false;
-    for (const selector of loginSelectors) {
-      try {
-        await currentPage.waitForSelector(selector, { timeout: 5000 });
-        await currentPage.click(selector);
-        loginClicked = true;
-        console.log(`Login button clicked: ${selector}`);
-        break;
-      } catch (e) {
-        continue;
-      }
-    }
-
-    if (!loginClicked) {
-      console.log('Login button not found, trying Enter key...');
-      await currentPage.keyboard.press('Enter');
-    }
-
-    // Wait for login to complete
-    await new Promise(resolve => setTimeout(resolve, 8000));
-    console.log('Automated login process completed');
-
+    broadcastToClients({
+      type: "automation_complete",
+      message: `Enhanced automation completed! Duration: ${finalStats.duration} minutes`,
+      sessionId: sessionId,
+      liveViewUrl: liveViewUrl,
+      automationState: automationState,
+      finalStats: finalStats,
+    });
   } catch (error: any) {
-    console.error('Automated login failed:', error);
-    throw new Error(`Automated login failed: ${error.message}`);
+    console.error("❌ Enhanced automation error:", error);
+    broadcastToClients({
+      type: "automation_error",
+      error: error.message,
+      sessionId: sessionId,
+      liveViewUrl: liveViewUrl,
+      automationState: automationState,
+    });
+  }
+}
+
+// Select next action based on current state and human behavior patterns
+function selectNextAction(): string {
+  const actions = [];
+
+  // Weight actions based on targets and current state
+  if (automationState.replies < automationState.targetReplies) {
+    actions.push("reply", "reply", "reply"); // Higher weight for replies
+  }
+
+  if (automationState.likes < automationState.targetLikes) {
+    actions.push("like", "like");
+  }
+
+  if (automationState.follows < automationState.targetFollows) {
+    actions.push("follow");
+  }
+
+  // Always include human-like activities
+  actions.push(
+    "browse_notifications",
+    "scroll_feed",
+    "read_post",
+    "youtube_break",
+    "profile_browse",
+  );
+
+  // Energy/focus affects action selection
+  if (automationState.energyLevel < 50) {
+    actions.push("scroll_feed", "read_post", "youtube_break"); // More passive activities
+  }
+
+  if (automationState.focusLevel < 40) {
+    actions.push("youtube_break", "random_browse"); // Distraction activities
+  }
+
+  // Random selection with weighted probabilities
+  return actions[Math.floor(Math.random() * actions.length)];
+}
+
+// Calculate human-like pause duration based on energy/focus
+function calculateHumanPause(): number {
+  const baseDelay = 15000; // 15 seconds base
+  const energyFactor = (100 - automationState.energyLevel) / 100; // 0-0.8
+  const focusFactor = (100 - automationState.focusLevel) / 100; // 0-0.7
+
+  const additionalDelay = (energyFactor + focusFactor) * 30000; // Up to 30s additional
+  const randomVariation = Math.random() * 10000; // ±5s random
+
+  return Math.max(5000, baseDelay + additionalDelay + randomVariation);
+}
+
+// Execute specific automation action
+async function executeAction(
+  page: Page,
+  sessionId: string,
+  liveViewUrl: string,
+  cursor: any,
+  action: string,
+) {
+  try {
+    console.log(`🎬 Executing action: ${action}`);
+
+    switch (action) {
+      case "reply":
+        await performReplyAction(page, sessionId, liveViewUrl, cursor);
+        break;
+      case "like":
+        await performLikeAction(page, sessionId, liveViewUrl, cursor);
+        break;
+      case "follow":
+        await performFollowAction(page, sessionId, liveViewUrl, cursor);
+        break;
+      case "browse_notifications":
+        await browseNotifications(page, sessionId, liveViewUrl, cursor);
+        break;
+      case "scroll_feed":
+        await scrollFeed(page, sessionId, liveViewUrl);
+        break;
+      case "read_post":
+        await readPost(page, sessionId, liveViewUrl);
+        break;
+      case "youtube_break":
+        await takeYouTubeBreak(page, sessionId, liveViewUrl);
+        break;
+      case "profile_browse":
+        await browseRandomProfile(page, sessionId, liveViewUrl, cursor);
+        break;
+      case "random_browse":
+        await performRandomBrowsing(page, sessionId, liveViewUrl);
+        break;
+      default:
+        console.log(`⚠️ Unknown action: ${action}`);
+    }
+  } catch (error: any) {
+    console.error(`❌ Action ${action} failed:`, error.message);
+    throw error;
+  }
+}
+
+// Individual action implementations
+async function performReplyAction(
+  page: Page,
+  sessionId: string,
+  liveViewUrl: string,
+  cursor: any,
+) {
+  try {
+    console.log("💬 Performing reply action...");
+
+    // Navigate to home feed if not already there
+    await ensureOnHomeFeed(page);
+
+    // Find posts to reply to
+    const posts = await findPosts(page);
+    if (posts.length === 0) {
+      console.log("⚠️ No posts found for reply");
+      return;
+    }
+
+    // Select random post
+    const randomPost =
+      posts[Math.floor(Math.random() * Math.min(posts.length, 5))];
+
+    // Scroll to post and read it
+    await randomPost.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(2000 + Math.random() * 3000);
+
+    // Extract post content
+    const postContent = await extractPostContentFromElement(randomPost);
+
+    // Find and click reply button
+    const replyButton = randomPost.locator('[data-testid="reply"]').first();
+    const isReplyVisible = await replyButton.isVisible();
+
+    if (!isReplyVisible) {
+      console.log("⚠️ Reply button not visible");
+      return;
+    }
+
+    await cursor.click(replyButton);
+    await page.waitForTimeout(2000 + Math.random() * 2000);
+
+    // Find comment box and generate reply
+    const commentBox = page.locator('[data-testid="tweetTextarea_0"]').first();
+    const isCommentBoxVisible = await commentBox.isVisible();
+
+    if (!isCommentBoxVisible) {
+      console.log("⚠️ Comment box not visible");
+      return;
+    }
+
+    // Generate AI reply
+    let replyText;
+    try {
+      replyText = await AIReplyService.generateReply(
+        postContent,
+        "conversational",
+      );
+      console.log("✅ AI Generated Reply:", replyText);
+    } catch (aiError: any) {
+      console.log("⚠️ AI generation failed, using fallback:", aiError.message);
+      const fallbackReplies = [
+        "Interesting perspective! Thanks for sharing this. 👍",
+        "Great point! I hadn't thought about it that way.",
+        "Thanks for posting this! Really insightful.",
+        "This is really helpful, appreciate you sharing!",
+        "Love this! Thanks for the great content. 🙌",
+      ];
+      replyText =
+        fallbackReplies[Math.floor(Math.random() * fallbackReplies.length)];
+    }
+
+    // Type reply with human-like behavior
+    await commentBox.focus();
+    await page.waitForTimeout(500);
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Delete");
+    await page.waitForTimeout(300);
+
+    await typeWithHumanBehavior(page, replyText);
+    await page.waitForTimeout(2000);
+
+    // Submit reply
+    const submitButton = page
+      .locator('[data-testid="tweetButtonInline"]')
+      .first();
+    const isSubmitEnabled = await submitButton.isEnabled();
+
+    if (isSubmitEnabled) {
+      await cursor.click(submitButton);
+      await page.waitForTimeout(3000);
+
+      automationState.replies++;
+      console.log(`✅ Reply posted! Total replies: ${automationState.replies}`);
+
+      broadcastToClients({
+        type: "automation_progress",
+        message: `Reply posted! Progress: ${automationState.replies}/${automationState.targetReplies} replies`,
+        step: "reply_posted",
+        liveViewUrl: liveViewUrl,
+        automationState: automationState,
+      });
+    } else {
+      console.log("⚠️ Submit button not enabled");
+    }
+  } catch (error: any) {
+    console.error("❌ Reply action failed:", error.message);
+    throw error;
+  }
+}
+
+async function performLikeAction(
+  page: Page,
+  sessionId: string,
+  liveViewUrl: string,
+  cursor: any,
+) {
+  try {
+    console.log("❤️ Performing like action...");
+
+    await ensureOnHomeFeed(page);
+
+    const posts = await findPosts(page);
+    if (posts.length === 0) {
+      console.log("⚠️ No posts found for like");
+      return;
+    }
+
+    const randomPost =
+      posts[Math.floor(Math.random() * Math.min(posts.length, 5))];
+    await randomPost.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1000 + Math.random() * 2000);
+
+    const likeButton = randomPost.locator('[data-testid="like"]').first();
+    const isLikeVisible = await likeButton.isVisible();
+
+    if (isLikeVisible) {
+      await cursor.click(likeButton);
+      await page.waitForTimeout(1000 + Math.random() * 1000);
+
+      automationState.likes++;
+      console.log(`✅ Post liked! Total likes: ${automationState.likes}`);
+
+      broadcastToClients({
+        type: "automation_progress",
+        message: `Post liked! Progress: ${automationState.likes}/${automationState.targetLikes} likes`,
+        step: "post_liked",
+        liveViewUrl: liveViewUrl,
+        automationState: automationState,
+      });
+    } else {
+      console.log("⚠️ Like button not visible");
+    }
+  } catch (error: any) {
+    console.error("❌ Like action failed:", error.message);
+    throw error;
+  }
+}
+
+async function performFollowAction(
+  page: Page,
+  sessionId: string,
+  liveViewUrl: string,
+  cursor: any,
+) {
+  try {
+    console.log("👥 Performing follow action...");
+
+    await ensureOnHomeFeed(page);
+
+    // Look for "Who to follow" recommendations
+    const followButtons = page.locator(
+      '[data-testid*="follow"]:not([data-testid*="following"])',
+    );
+    const followCount = await followButtons.count();
+
+    if (followCount > 0) {
+      const randomIndex = Math.floor(Math.random() * Math.min(followCount, 5));
+      const followButton = followButtons.nth(randomIndex);
+      const isVisible = await followButton.isVisible();
+
+      if (isVisible) {
+        await followButton.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(1000 + Math.random() * 2000);
+
+        await cursor.click(followButton);
+        await page.waitForTimeout(2000 + Math.random() * 2000);
+
+        automationState.follows++;
+        console.log(
+          `✅ Account followed! Total follows: ${automationState.follows}`,
+        );
+
+        broadcastToClients({
+          type: "automation_progress",
+          message: `Account followed! Progress: ${automationState.follows}/${automationState.targetFollows} follows`,
+          step: "account_followed",
+          liveViewUrl: liveViewUrl,
+          automationState: automationState,
+        });
+      } else {
+        console.log("⚠️ Follow button not visible");
+      }
+    } else {
+      console.log("⚠️ No follow recommendations found");
+    }
+  } catch (error: any) {
+    console.error("❌ Follow action failed:", error.message);
+    throw error;
+  }
+}
+
+async function browseNotifications(
+  page: Page,
+  sessionId: string,
+  liveViewUrl: string,
+  cursor: any,
+) {
+  try {
+    console.log("🔔 Browsing notifications...");
+
+    // Navigate to notifications
+    const notificationsTab = page
+      .locator('[data-testid="AppTabBar_Notifications_Link"]')
+      .first();
+    const isNotificationsVisible = await notificationsTab.isVisible();
+
+    if (isNotificationsVisible) {
+      await cursor.click(notificationsTab);
+      await page.waitForTimeout(3000 + Math.random() * 2000);
+
+      // Scroll through notifications
+      for (let i = 0; i < 3; i++) {
+        await page.mouse.wheel(0, 400);
+        await page.waitForTimeout(2000 + Math.random() * 2000);
+      }
+
+      console.log("✅ Notifications browsed");
+
+      // Return to home
+      const homeTab = page
+        .locator('[data-testid="AppTabBar_Home_Link"]')
+        .first();
+      await cursor.click(homeTab);
+      await page.waitForTimeout(2000);
+    } else {
+      console.log("⚠️ Notifications tab not visible");
+    }
+  } catch (error: any) {
+    console.error("❌ Browse notifications failed:", error.message);
+    throw error;
+  }
+}
+
+async function scrollFeed(page: Page, sessionId: string, liveViewUrl: string) {
+  try {
+    console.log("📜 Scrolling feed...");
+
+    await ensureOnHomeFeed(page);
+
+    // Human-like scrolling pattern
+    const scrollSteps = 3 + Math.floor(Math.random() * 4); // 3-6 scrolls
+
+    for (let i = 0; i < scrollSteps; i++) {
+      const scrollAmount = 300 + Math.random() * 400; // 300-700px
+      await page.mouse.wheel(0, scrollAmount);
+
+      const pauseTime = 1500 + Math.random() * 2500; // 1.5-4s pause
+      await page.waitForTimeout(pauseTime);
+    }
+
+    console.log("✅ Feed scrolled");
+  } catch (error: any) {
+    console.error("❌ Scroll feed failed:", error.message);
+    throw error;
+  }
+}
+
+async function readPost(page: Page, sessionId: string, liveViewUrl: string) {
+  try {
+    console.log("📖 Reading post...");
+
+    await ensureOnHomeFeed(page);
+
+    const posts = await findPosts(page);
+    if (posts.length > 0) {
+      const randomPost =
+        posts[Math.floor(Math.random() * Math.min(posts.length, 3))];
+
+      await randomPost.scrollIntoViewIfNeeded();
+
+      // Simulate reading time based on post length
+      const postText = await randomPost.textContent();
+      const readingTime = Math.max(3000, (postText?.length || 100) * 50); // ~50ms per character
+
+      console.log(`📚 Reading for ${Math.round(readingTime / 1000)}s...`);
+      await page.waitForTimeout(readingTime);
+    }
+
+    console.log("✅ Post read");
+  } catch (error: any) {
+    console.error("❌ Read post failed:", error.message);
+    throw error;
+  }
+}
+
+async function takeYouTubeBreak(
+  page: Page,
+  sessionId: string,
+  liveViewUrl: string,
+) {
+  try {
+    console.log("🎥 Taking YouTube break...");
+
+    const context = page.context();
+    const youtubeTab = await context.newPage();
+
+    await youtubeTab.goto("https://www.youtube.com", {
+      waitUntil: "networkidle",
+      timeout: 30000,
+    });
+
+    // Broadcast secondary tab
+    try {
+      const liveViewLinks = await browserbase.sessions.debug(testSession!.id);
+      const allTabs = liveViewLinks.pages;
+      const youtubeTabLiveView = allTabs.find(
+        (tab) => tab.url && tab.url.includes("youtube.com"),
+      );
+
+      if (youtubeTabLiveView) {
+        broadcastToClients({
+          type: "secondary_tab_opened",
+          tabType: "youtube",
+          tabName: "YouTube Break",
+          tabUrl: youtubeTabLiveView.debuggerFullscreenUrl,
+          message: "Taking a YouTube break - human-like behavior",
+        });
+      }
+    } catch (liveViewError) {
+      console.log("⚠️ Could not get YouTube tab live view URL");
+    }
+
+    await youtubeTab.waitForTimeout(2000);
+
+    // Scroll through YouTube
+    for (let i = 0; i < 4; i++) {
+      await youtubeTab.mouse.wheel(0, 400);
+      await youtubeTab.waitForTimeout(2000 + Math.random() * 2000);
+    }
+
+    // Browse for 10-20 seconds
+    const browsingTime = 10000 + Math.random() * 10000;
+    await youtubeTab.waitForTimeout(browsingTime);
+
+    // Close YouTube tab
+    broadcastToClients({
+      type: "secondary_tab_closing",
+      tabType: "youtube",
+      message: "Closing YouTube tab, returning to X...",
+    });
+
+    await youtubeTab.close();
+
+    broadcastToClients({
+      type: "secondary_tab_closed",
+      tabType: "youtube",
+      message: "YouTube break complete",
+    });
+
+    await page.waitForTimeout(1000);
+    console.log("✅ YouTube break completed");
+  } catch (error: any) {
+    console.error("❌ YouTube break failed:", error.message);
+    throw error;
+  }
+}
+
+async function browseRandomProfile(
+  page: Page,
+  sessionId: string,
+  liveViewUrl: string,
+  cursor: any,
+) {
+  try {
+    console.log("👤 Browsing random profile...");
+
+    await ensureOnHomeFeed(page);
+
+    // Find profile links
+    const profileLinks = page.locator('a[href*="/"][href$=""]').filter({
+      hasText: /@\w+/,
+    });
+
+    const linkCount = await profileLinks.count();
+
+    if (linkCount > 0) {
+      const randomLink = profileLinks.nth(
+        Math.floor(Math.random() * Math.min(linkCount, 5)),
+      );
+      const isVisible = await randomLink.isVisible();
+
+      if (isVisible) {
+        await cursor.click(randomLink);
+        await page.waitForTimeout(3000 + Math.random() * 2000);
+
+        // Browse profile for a bit
+        await page.mouse.wheel(0, 600);
+        await page.waitForTimeout(3000 + Math.random() * 3000);
+
+        // Go back to home
+        await page.goBack();
+        await page.waitForTimeout(2000);
+
+        console.log("✅ Profile browsed");
+      }
+    } else {
+      console.log("⚠️ No profile links found");
+    }
+  } catch (error: any) {
+    console.error("❌ Browse profile failed:", error.message);
+    throw error;
+  }
+}
+
+async function performRandomBrowsing(
+  page: Page,
+  sessionId: string,
+  liveViewUrl: string,
+) {
+  try {
+    console.log("🎲 Performing random browsing...");
+
+    const randomActions = ["scroll", "pause", "click_trending", "search"];
+    const action =
+      randomActions[Math.floor(Math.random() * randomActions.length)];
+
+    switch (action) {
+      case "scroll":
+        await page.mouse.wheel(0, 200 + Math.random() * 400);
+        await page.waitForTimeout(2000 + Math.random() * 3000);
+        break;
+      case "pause":
+        await page.waitForTimeout(5000 + Math.random() * 5000);
+        break;
+      case "click_trending":
+        const trendingLink = page.locator('text="Trending"').first();
+        const isTrendingVisible = await trendingLink.isVisible();
+        if (isTrendingVisible) {
+          await trendingLink.click();
+          await page.waitForTimeout(3000);
+          await page.goBack();
+        }
+        break;
+      case "search":
+        const searchBox = page
+          .locator('[data-testid="SearchBox_Search_Input"]')
+          .first();
+        const isSearchVisible = await searchBox.isVisible();
+        if (isSearchVisible) {
+          await searchBox.click();
+          await page.waitForTimeout(1000);
+          await page.keyboard.press("Escape");
+        }
+        break;
+    }
+
+    console.log(`✅ Random browsing: ${action}`);
+  } catch (error: any) {
+    console.error("❌ Random browsing failed:", error.message);
+    throw error;
+  }
+}
+
+// Helper functions
+async function ensureOnHomeFeed(page: Page) {
+  try {
+    const currentUrl = await page.url();
+    if (!currentUrl.includes("/home") && !currentUrl.includes("/following")) {
+      console.log("🏠 Navigating to home feed...");
+      await page.goto("https://x.com/home", {
+        waitUntil: "networkidle",
+        timeout: 30000,
+      });
+      await page.waitForTimeout(3000);
+    }
+  } catch (error) {
+    console.log("⚠️ Failed to navigate to home feed:", error.message);
+  }
+}
+
+async function findPosts(page: Page) {
+  try {
+    const postSelectors = [
+      '[data-testid="tweet"]',
+      'article[data-testid="tweet"]',
+      'div[data-testid="tweet"]',
+    ];
+
+    for (const selector of postSelectors) {
+      const posts = page.locator(selector);
+      const count = await posts.count();
+
+      if (count > 0) {
+        const visiblePosts = [];
+        for (let i = 0; i < Math.min(count, 10); i++) {
+          const post = posts.nth(i);
+          const isVisible = await post.isVisible();
+          if (isVisible) {
+            visiblePosts.push(post);
+          }
+        }
+        return visiblePosts;
+      }
+    }
+
+    return [];
+  } catch (error) {
+    console.log("⚠️ Failed to find posts:", error.message);
+    return [];
   }
 }
 
@@ -1083,54 +1935,51 @@ async function typeWithHumanBehavior(page: Page, text: string) {
   try {
     console.log(`🎯 Typing "${text}" with human-like behavior...`);
 
-    // Track if we've already made a typo (limit to 1 per text)
     let typoMade = false;
 
     for (let i = 0; i < text.length; i++) {
       const char = text[i];
 
-      // 1. Random thinking pause (8% chance)
+      // Random thinking pause (8% chance)
       if (Math.random() < 0.08) {
-        const thinkingDelay = 400 + Math.random() * 800; // 400-1200ms thinking pause
+        const thinkingDelay = 400 + Math.random() * 800;
         console.log(`🤔 Thinking pause: ${Math.round(thinkingDelay)}ms`);
         await page.waitForTimeout(thinkingDelay);
       }
 
-      // 2. Occasional typo simulation (only once per text, 3% chance, after 25% of text)
-      if (!typoMade && Math.random() < 0.03 && i > Math.floor(text.length * 0.25)) {
-        console.log('❌ Making a single typo...');
-        typoMade = true; // Mark that we've made our one typo
+      // Occasional typo simulation (only once per text, 3% chance, after 25% of text)
+      if (
+        !typoMade &&
+        Math.random() < 0.03 &&
+        i > Math.floor(text.length * 0.25)
+      ) {
+        console.log("❌ Making a single typo...");
+        typoMade = true;
 
-        // Type a wrong character first
-        const wrongChars = 'qwertyuiopasdfghjklzxcvbnm';
-        const wrongChar = wrongChars[Math.floor(Math.random() * wrongChars.length)];
+        const wrongChars = "qwertyuiopasdfghjklzxcvbnm";
+        const wrongChar =
+          wrongChars[Math.floor(Math.random() * wrongChars.length)];
         await page.keyboard.type(wrongChar);
 
-        // Pause as human realizes mistake
         await page.waitForTimeout(200 + Math.random() * 300);
-
-        // Backspace to correct
-        await page.keyboard.press('Backspace');
+        await page.keyboard.press("Backspace");
         await page.waitForTimeout(100 + Math.random() * 200);
 
-        console.log('🔙 Correcting typo...');
+        console.log("🔙 Correcting typo...");
       }
 
-      // 3. Random backspace and retype (2% chance, but not on first few chars)
+      // Random backspace and retype (2% chance, but not on first few chars)
       if (Math.random() < 0.02 && i > 5) {
-        console.log('🔄 Deleting and retyping...');
+        console.log("🔄 Deleting and retyping...");
 
-        // Delete 2-4 previous characters
         const deleteCount = 2 + Math.floor(Math.random() * 3);
         for (let d = 0; d < deleteCount; d++) {
-          await page.keyboard.press('Backspace');
+          await page.keyboard.press("Backspace");
           await page.waitForTimeout(80 + Math.random() * 120);
         }
 
-        // Pause before retyping
         await page.waitForTimeout(300 + Math.random() * 400);
 
-        // Retype the deleted characters plus current one
         const startIndex = Math.max(0, i - deleteCount + 1);
         const retypeText = text.substring(startIndex, i + 1);
 
@@ -1141,36 +1990,34 @@ async function typeWithHumanBehavior(page: Page, text: string) {
         }
 
         console.log(`✅ Retyped: "${retypeText}"`);
-        continue; // Skip normal typing for this character
+        continue;
       }
 
-      // 4. Type the character with variable speed
+      // Type the character with variable speed
       await page.keyboard.type(char);
 
-      // 5. Calculate realistic delay based on character type
+      // Calculate realistic delay based on character type
       let baseDelay = 120 + Math.random() * 180; // 120-300ms base
 
-      // Character-specific delays
-      if (char === ' ') {
-        baseDelay += 80; // Longer pause after words
+      if (char === " ") {
+        baseDelay += 80;
       } else if (char.match(/[.!?]/)) {
-        baseDelay += 150; // Pause after punctuation
+        baseDelay += 150;
       } else if (char.match(/[,;:]/)) {
-        baseDelay += 100; // Medium pause after minor punctuation
+        baseDelay += 100;
       } else if (char.match(/[A-Z]/)) {
-        baseDelay += 50; // Slightly longer for capitals
+        baseDelay += 50;
       } else if (char.match(/[0-9]/)) {
-        baseDelay += 30; // Numbers are slightly slower
+        baseDelay += 30;
       }
 
-      // 6. Add random variation (human inconsistency)
-      const variation = (Math.random() - 0.5) * 100; // ±50ms variation
+      const variation = (Math.random() - 0.5) * 100;
       const finalDelay = Math.max(50, baseDelay + variation);
 
       await page.waitForTimeout(finalDelay);
 
-      // 7. Occasional longer pause mid-sentence (2% chance)
-      if (Math.random() < 0.02 && char !== ' ') {
+      // Occasional longer pause mid-sentence (2% chance)
+      if (Math.random() < 0.02 && char !== " ") {
         const midPause = 500 + Math.random() * 1000;
         console.log(`⏸️ Mid-sentence pause: ${Math.round(midPause)}ms`);
         await page.waitForTimeout(midPause);
@@ -1178,1993 +2025,27 @@ async function typeWithHumanBehavior(page: Page, text: string) {
     }
 
     console.log(`✅ Finished typing with human-like behavior`);
-
   } catch (error: any) {
-    console.error('❌ Human typing error:', error.message);
-    // Fallback to simple typing if our advanced typing fails
+    console.error("❌ Human typing error:", error.message);
     await page.keyboard.type(text, { delay: 100 });
   }
 }
 
-// POST /api/test-browser/reconnect-session - Reconnect to existing session with cookies
-router.post("/reconnect-session", async (req, res) => {
-  try {
-    const { sessionId } = z.object({
-      sessionId: z.string()
-    }).parse(req.body);
-    
-    console.log("🔄 Reconnecting to existing session:", sessionId);
-    
-    // Check if session exists in database
-    const [existingSession] = await db
-      .select()
-      .from(browserSessions)
-      .where(eq(browserSessions.sessionId, sessionId));
-    
-    if (!existingSession) {
-      return res.status(404).json({
-        success: false,
-        status: 'session_not_found',
-        message: 'Session not found in database',
-        sessionId: sessionId
-      });
-    }
-    
-    console.log(`📋 Found session in database with status: ${existingSession.status}`);
-    
-    // Connect to existing Browserbase session
-    const browserbase = new Browserbase({
-      apiKey: process.env.BROWSERBASE_API_KEY!,
-    });
-    
-    let browser, defaultContext, page;
-    
-    try {
-      browser = await chromium.connectOverCDP(`wss://connect.browserbase.com?apiKey=${process.env.BROWSERBASE_API_KEY}&sessionId=${sessionId}`);
-      defaultContext = browser.contexts()[0];
-      page = defaultContext.pages()[0];
-      console.log("✅ Connected to existing Browserbase session");
-    } catch (connectionError: any) {
-      console.error("❌ Failed to connect to Browserbase session:", connectionError.message);
-      return res.status(500).json({
-        success: false,
-        status: 'connection_failed',
-        message: 'Failed to connect to browser session',
-        error: connectionError.message
-      });
-    }
-    
-    // Load cookies from database
-    const cookiesLoaded = await loadCookiesFromDatabase(sessionId, page);
-    
-    if (cookiesLoaded) {
-      console.log("✅ Cookies loaded, validating...");
-      
-      // Validate cookies by checking login status
-      const cookiesValid = await validateCookies(page);
-      
-      if (cookiesValid) {
-        console.log("✅ Session reconnected with valid cookies");
-        
-        // Update session status in database
-        await db
-          .update(browserSessions)
-          .set({ 
-            status: 'active',
-            browserUrl: await page.url().catch(() => null)
-          })
-          .where(eq(browserSessions.sessionId, sessionId));
-        
-        // Get live view URL
-        let liveViewUrl = null;
-        try {
-          const liveViewLinks = await browserbase.sessions.debug(sessionId);
-          liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
-        } catch (debugError: any) {
-          console.log("⚠️ Could not get live view URL:", debugError.message);
-        }
-        
-        // Store session globally
-        testSession = { id: sessionId };
-        testBrowser = browser;
-        testContext = defaultContext;
-        testPage = page;
-        
-        res.json({
-          success: true,
-          status: 'reconnected_with_valid_cookies',
-          liveViewUrl: liveViewUrl,
-          message: 'Session reconnected with valid cookies - ready for automation',
-          sessionId: sessionId,
-          cookieAge: existingSession.cookies ? 'Available' : 'None',
-          sessionStatus: 'Active'
-        });
-      } else {
-        console.log("❌ Cookies are invalid or expired");
-        
-        // Update session status in database
-        await db
-          .update(browserSessions)
-          .set({ 
-            status: 'cookies_expired'
-          })
-          .where(eq(browserSessions.sessionId, sessionId));
-        
-        // Get live view URL for manual login
-        let liveViewUrl = null;
-        try {
-          const liveViewLinks = await browserbase.sessions.debug(sessionId);
-          liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
-        } catch (debugError: any) {
-          console.log("⚠️ Could not get live view URL:", debugError.message);
-        }
-        
-        res.json({
-          success: false,
-          status: 'cookies_expired',
-          message: 'Cookies are expired or invalid, manual login required',
-          sessionId: sessionId,
-          liveViewUrl: liveViewUrl,
-          requiresLogin: true
-        });
-      }
-    } else {
-      console.log("⚠️ Failed to load cookies, requiring manual login");
-      
-      // Update session status in database
-      await db
-        .update(browserSessions)
-        .set({ 
-          status: 'no_cookies'
-        })
-        .where(eq(browserSessions.sessionId, sessionId));
-      
-      // Get live view URL for manual login
-      let liveViewUrl = null;
-      try {
-        const liveViewLinks = await browserbase.sessions.debug(sessionId);
-        liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
-      } catch (debugError: any) {
-        console.log("⚠️ Could not get live view URL:", debugError.message);
-      }
-      
-      res.json({
-        success: false,
-        status: 'cookies_failed',
-        message: 'No cookies available, manual login required',
-        sessionId: sessionId,
-        liveViewUrl: liveViewUrl,
-        requiresLogin: true
-      });
-    }
-    
-  } catch (error: any) {
-    console.error("❌ Session reconnection error:", error);
-    res.status(500).json({
-      success: false,
-      status: 'error',
-      message: error.message,
-      sessionId: req.body.sessionId || 'unknown'
-    });
-  }
-});
-
-// POST /api/test-browser/test-script - Human-like automation with verified functions
-router.post("/test-script", async (req, res) => {
-  try {
-    console.log("🚀 Starting verified human-like automation...");
-
-    // 1. Create Browserbase session (VERIFIED)
-    const session = await browserbase.sessions.create({
-      projectId: process.env.BROWSERBASE_PROJECT_ID!,
-      browserSettings: {
-        viewport: { width: 1280, height: 720 },
-        fingerprint: {
-          devices: ["desktop"],
-          locales: ["en-US"],
-          operatingSystems: ["windows"]
-        },
-        solveCaptchas: false
-      },
-      proxies: true,
-      timeout: 3600
-    });
-
-    console.log("✅ Session created:", session.id);
-
-    // 2. Connect to browser (VERIFIED)
-    const browser = await chromium.connectOverCDP(session.connectUrl);
-    const defaultContext = browser.contexts()[0];
-    const page = defaultContext.pages()[0];
-
-    // 3. Initialize ghost cursor (OFFICIAL DOCUMENTED METHOD)
-    console.log("🎯 Initializing ghost cursor...");
-    let cursor;
-
-    try {
-      // OFFICIAL: Import and create cursor with await (DOCUMENTED)
-      const { createCursor } = await import('ghost-cursor-playwright');
-      cursor = await createCursor(page); // ✅ OFFICIAL: Requires await
-
-      // OFFICIAL: Test cursor functionality
-      if (cursor && typeof cursor.click === 'function') {
-        console.log("✅ Ghost cursor initialized successfully");
-      } else {
-        throw new Error("Ghost cursor object invalid");
-      }
-    } catch (error) {
-      console.log("⚠️ Ghost cursor failed, creating fallback:", error.message);
-
-      // OFFICIAL FALLBACK: Use Playwright's documented mouse API
-      cursor = {
-        click: async (element) => {
-          // OFFICIAL: Use locator.click() with auto-waiting
-          await element.click();
-        }
-      };
-    }
-
-    // Store session globally
-    testSession = session;
-    testBrowser = browser;
-    testContext = defaultContext;
-    testPage = page;
-    
-    // Create database record for this session
-    await createBrowserSessionRecord(session.id);
-
-    // 4. Get live view URL (VERIFIED)
-    const liveViewLinks = await browserbase.sessions.debug(session.id);
-    const liveViewUrl = liveViewLinks.debuggerFullscreenUrl;
-
-    // 5. Broadcast live view URL (VERIFIED)
-    broadcastToClients({
-      type: 'live_view_url',
-      url: liveViewUrl,
-      message: 'Live view ready - starting automation',
-      sessionId: session.id
-    });
-
-    // Test AI service before starting automation
-    console.log('🧪 Testing AI service connection...');
-    const aiWorking = await AIReplyService.testConnection();
-
-    if (aiWorking) {
-      console.log('✅ AI service is working correctly');
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'AI service connected and ready!',
-        step: 'ai_service_ready',
-        liveViewUrl: liveViewUrl
-      });
-    } else {
-      console.log('⚠️ AI service test failed, will use fallback replies');
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'AI service unavailable, using fallback replies',
-        step: 'ai_service_fallback',
-        liveViewUrl: liveViewUrl
-      });
-    }
-
-    // 6. Navigate to login (VERIFIED)
-    await page.goto('https://x.com/i/flow/login', {
-      waitUntil: 'domcontentloaded',
-      timeout: 30000
-    });
-
-    // 7. Human delay using waitForTimeout (VERIFIED)
-    await page.waitForTimeout(3000 + Math.random() * 2000);
-
-    // 8. Check if login needed (VERIFIED)
-    const needsLogin = await checkIfLoginNeeded(page);
-
-    if (needsLogin) {
-      console.log("🔐 Manual login required");
-
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'Please complete login to continue automation',
-        step: 'manual_login',
-        liveViewUrl: liveViewUrl,
-        sessionId: session.id
-      });
-
-      res.json({
-        success: true,
-        status: 'manual_intervention_required',
-        liveViewUrl: liveViewUrl,
-        message: 'Please complete login in the browser above',
-        sessionId: session.id
-      });
-
-      // Wait for login and continue (VERIFIED functions only)
-      waitForLoginAndContinueVerified(page, session.id, liveViewUrl, cursor);
-
-    } else {
-      console.log("✅ Already logged in");
-      res.json({
-        success: true,
-        status: 'continuing_automation',
-        liveViewUrl: liveViewUrl,
-        message: 'Already logged in, continuing automation'
-      });
-
-      performVerifiedAutomation(page, session.id, liveViewUrl, cursor);
-    }
-
-  } catch (error: any) {
-    console.error("❌ Test script error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-});
-
-// Wait for login with verified functions only
-async function waitForLoginAndContinueVerified(page: Page, sessionId: string, liveViewUrl: string, cursor: any) {
-  try {
-    console.log("⏳ Waiting for login completion...");
-
-    const loginDetected = await waitForLoginCompletionVerified(page, liveViewUrl, sessionId);
-
-    if (loginDetected) {
-      console.log("✅ Login detected! Saving cookies...");
-      
-      // Save cookies after successful login
-      const cookiesSaved = await saveCookiesToDatabase(sessionId, page);
-      
-      if (cookiesSaved) {
-        console.log("✅ Login cookies saved successfully!");
-        broadcastToClients({
-          type: 'login_detected',
-          message: 'Login detected and cookies saved! Please handle any security challenges and navigate to Following feed manually.',
-          sessionId: sessionId,
-          liveViewUrl: liveViewUrl
-        });
-      } else {
-        console.log("⚠️ Login detected but failed to save cookies");
-        broadcastToClients({
-          type: 'login_detected',
-          message: 'Login detected! Please handle any security challenges and navigate to Following feed manually.',
-          sessionId: sessionId,
-          liveViewUrl: liveViewUrl
-        });
-      }
-
-      // Extended manual handoff to handle Cloudflare/security challenges
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'MANUAL HANDOFF: Please complete any security challenges (Cloudflare CAPTCHA) and navigate to the Following feed. Automation will detect when ready.',
-        step: 'extended_manual_handoff',
-        liveViewUrl: liveViewUrl
-      });
-
-      // Wait for user to handle security challenges and navigate to Following feed
-      console.log('⏳ Waiting for user to handle security challenges and navigate to Following feed...');
-      
-      let followingFeedReady = false;
-      let handoffAttempts = 0;
-      const maxHandoffAttempts = 60; // 5 minutes total (5 second intervals)
-
-      while (!followingFeedReady && handoffAttempts < maxHandoffAttempts) {
-        try {
-          // Check for Cloudflare challenge
-          const cloudflareChallenge = await page.locator('text="Verify you are human"').isVisible().catch(() => false);
-          const cloudflareFrame = await page.locator('[src*="cloudflare"]').isVisible().catch(() => false);
-          
-          if (cloudflareChallenge || cloudflareFrame) {
-            console.log('🛡️ Cloudflare challenge detected, waiting for user to complete...');
-            broadcastToClients({
-              type: 'automation_progress',
-              message: 'Cloudflare security challenge detected. Please complete the CAPTCHA manually.',
-              step: 'cloudflare_challenge',
-              liveViewUrl: liveViewUrl
-            });
-          } else {
-            // Check if user has navigated to Following feed successfully
-            const followingTabVisible = await page.locator('[data-testid="AppTabBar_Following_Link"], [href="/following"], text="Following"').isVisible().catch(() => false);
-            const homeWithPosts = await page.locator('[data-testid="tweet"]').count().catch(() => 0);
-            const currentUrl = await page.url().catch(() => '');
-            
-            // User is ready if they're on Following feed OR home feed with posts visible
-            if (followingTabVisible || homeWithPosts > 0 || currentUrl.includes('/home') || currentUrl.includes('/following')) {
-              console.log('✅ User has successfully navigated past security challenges');
-              followingFeedReady = true;
-              
-              broadcastToClients({
-                type: 'automation_progress',
-                message: 'Security challenges completed! Automation will now continue.',
-                step: 'security_challenges_complete',
-                liveViewUrl: liveViewUrl
-              });
-              break;
-            }
-          }
-          
-          // Wait 5 seconds before checking again
-          await page.waitForTimeout(5000);
-          handoffAttempts++;
-          
-          // Update user every 30 seconds
-          if (handoffAttempts % 6 === 0) {
-            const remainingTime = Math.round((maxHandoffAttempts - handoffAttempts) * 5 / 60);
-            broadcastToClients({
-              type: 'automation_progress',
-              message: `Still waiting for manual navigation. ${remainingTime} minutes remaining. Please complete any security challenges and navigate to Following feed.`,
-              step: 'manual_handoff_waiting',
-              liveViewUrl: liveViewUrl
-            });
-          }
-          
-        } catch (checkError) {
-          console.log('⚠️ Error during manual handoff check:', checkError.message);
-          await page.waitForTimeout(5000);
-          handoffAttempts++;
-        }
-      }
-
-      if (!followingFeedReady) {
-        throw new Error('Manual handoff timeout - user did not complete security challenges within 5 minutes');
-      }
-
-      console.log('🎯 Extended manual handoff complete, continuing with automation...');
-      
-      // Human thinking delay (VERIFIED: page.waitForTimeout)
-      await page.waitForTimeout(3000 + Math.random() * 2000);
-
-      await performVerifiedAutomation(page, sessionId, liveViewUrl, cursor);
-    } else {
-      broadcastToClients({
-        type: 'automation_error',
-        error: 'Login timeout - please try again',
-        sessionId: sessionId,
-        liveViewUrl: liveViewUrl
-      });
-    }
-  } catch (error: any) {
-    console.error("❌ Login wait error:", error);
-    broadcastToClients({
-      type: 'automation_error',
-      error: error.message,
-      sessionId: sessionId,
-      liveViewUrl: liveViewUrl
-    });
-  }
-}
-
-// Login detection with verified functions and error recovery (VERIFIED)
-async function waitForLoginCompletionVerified(page: Page, liveViewUrl: string, sessionId?: string) {
-  const maxWait = 300000; // 5 minutes
-  const checkInterval = 5000; // 5 seconds (increased for stability)
-  let elapsed = 0;
-  let consecutiveErrors = 0;
-
-  while (elapsed < maxWait) {
-    try {
-      // Reset error counter on successful check
-      consecutiveErrors = 0;
-
-      // VERIFIED: page.url() method - check URL first as it's most reliable
-      const currentUrl = await page.url();
-      console.log(`🔍 Login check - Current URL: ${currentUrl}`);
-
-      // Check for authenticated URLs
-      const isAuthenticated = (
-        currentUrl.includes('/home') || 
-        currentUrl.includes('/following') ||
-        currentUrl.includes('/notifications') ||
-        currentUrl.includes('/messages') ||
-        (currentUrl.includes('x.com') && !currentUrl.includes('/login') && !currentUrl.includes('/flow') && !currentUrl.includes('/logout'))
-      );
-
-      if (isAuthenticated) {
-        console.log("✅ Login detected via URL check");
-        
-        // Save cookies immediately after successful login detection
-        if (sessionId) {
-          console.log("💾 Saving cookies after successful login...");
-          const cookiesSaved = await saveCookiesToDatabase(sessionId, page);
-          if (cookiesSaved) {
-            console.log("✅ Login cookies saved to database");
-          } else {
-            console.log("⚠️ Failed to save login cookies");
-          }
-        }
-        
-        return true;
-      }
-
-      // VERIFIED: page.$() method - check for authenticated elements
-      try {
-        const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
-        const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
-        const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
-        const tweetButton = await page.$('[data-testid="tweetButtonInline"]');
-
-        if (homeButton || profileButton || composeButton || tweetButton) {
-          console.log("✅ Login detected via element check");
-          return true;
-        }
-      } catch (elementError) {
-        console.log("⚠️ Element check failed (context may be destroyed):", elementError.message);
-      }
-
-    } catch (error: any) {
-      consecutiveErrors++;
-      console.log(`⚠️ Login check error (${consecutiveErrors}/3):`, error.message);
-
-      // If we have too many consecutive errors, the page context might be destroyed
-      if (consecutiveErrors >= 3) {
-        console.log("❌ Too many consecutive errors, assuming page context destroyed");
-
-        // Try to recover by checking if we can still access the page
-        try {
-          const recoveryUrl = await page.url();
-          console.log(`🔄 Recovery check - URL: ${recoveryUrl}`);
-
-          // If we can get the URL and it looks authenticated, consider it successful
-          if (recoveryUrl.includes('/home') || recoveryUrl.includes('/following') || 
-              (recoveryUrl.includes('x.com') && !recoveryUrl.includes('/login') && !recoveryUrl.includes('/flow'))) {
-            console.log("✅ Login detected via recovery check");
-            return true;
-          }
-        } catch (recoveryError) {
-          console.log("❌ Recovery failed:", recoveryError.message);
-        }
-
-        // Reset counter and continue
-        consecutiveErrors = 0;
-      }
-    }
-
-    // VERIFIED: page.waitForTimeout for delays
-    await page.waitForTimeout(checkInterval);
-    elapsed += checkInterval;
-
-    // Periodic updates
-    if (elapsed % 30000 === 0) {
-      const remaining = Math.floor((maxWait - elapsed) / 1000);
-      broadcastToClients({
-        type: 'automation_progress',
-        message: `Waiting for login (${remaining}s remaining)...`,
-        step: 'login_wait',
-        liveViewUrl: liveViewUrl
-      });
-    }
-  }
-
-  console.log("❌ Login detection timeout reached");
-  return false;
-}
-
-// Perform automation using ONLY official documented methods with logout detection
-async function performVerifiedAutomation(page: Page, sessionId: string, liveViewUrl: string, cursor: any) {
-  try {
-    console.log("🤖 Starting verified automation sequence...");
-
-    // Step 1: Check if we're logged out or on login page
-    const currentUrl = await page.url();
-    console.log("🔍 Current URL after login:", currentUrl);
-
-    if (currentUrl.includes('/login') || currentUrl.includes('/logout') || currentUrl.includes('/flow')) {
-      console.log("❌ Detected logout or login page - session may have been invalidated");
-      broadcastToClients({
-        type: 'automation_error',
-        error: 'Session was logged out or invalidated. Please try logging in again.',
-        sessionId: sessionId,
-        liveViewUrl: liveViewUrl
-      });
-      return;
-    }
-
-    // Step 2: Navigate to Following feed (if not already there)
-    console.log('📋 Ensuring we are on Following feed...');
-    
-    const pageUrl = await page.url();
-    const isAlreadyOnFollowing = pageUrl.includes('/following') || pageUrl.includes('/home');
-    
-    if (!isAlreadyOnFollowing) {
-      console.log('🔄 Not on Following feed, attempting to navigate...');
-      
-      const followingSelectors = [
-        '[data-testid="AppTabBar_Following_Link"]',
-        '[href="/following"]',
-        'a[aria-label*="Following"]',
-        'nav a:has-text("Following")',
-        '[role="tab"]:has-text("Following")'
-      ];
-      
-      let followingClicked = false;
-      
-      for (const selector of followingSelectors) {
-        try {
-          const followingTab = page.locator(selector).first();
-          const isVisible = await followingTab.isVisible();
-          
-          if (isVisible) {
-            console.log(`✅ Found Following tab with selector: ${selector}`);
-            
-            // Use ghost cursor for human-like clicking
-            try {
-              const { createCursor } = await import('ghost-cursor-playwright');
-              const cursor = await createCursor(page);
-              await cursor.click(followingTab);
-            } catch (cursorError) {
-              await followingTab.click();
-            }
-            
-            followingClicked = true;
-            console.log('✅ Following tab clicked');
-            break;
-          }
-        } catch (selectorError) {
-          console.log(`⚠️ Following selector ${selector} failed, trying next...`);
-          continue;
-        }
-      }
-      
-      if (!followingClicked) {
-        console.log('⚠️ Could not find Following tab, proceeding with current feed...');
-      } else {
-        // Wait for Following feed to load
-        await page.waitForTimeout(3000 + Math.random() * 2000);
-      }
-    } else {
-      console.log('✅ Already on Following/Home feed, proceeding...');
-    }
-    
-    // Verify we have posts to interact with
-    const postsAvailable = await page.locator('[data-testid="tweet"]').count();
-    console.log(`📄 Found ${postsAvailable} posts available for interaction`);
-    
-    if (postsAvailable === 0) {
-      console.log('⚠️ No posts found, waiting for content to load...');
-      await page.waitForTimeout(5000);
-    }
-
-    // Step 5: Wait for content and find posts
-    await page.waitForTimeout(4000 + Math.random() * 3000);
-
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Looking for posts...',
-      step: 'finding_posts',
-      liveViewUrl: liveViewUrl
-    });
-
-    console.log("🔍 Looking for posts...");
-
-    // Try multiple selectors for posts
-    const postSelectors = [
-      'article[data-testid="tweet"]',
-      'div[data-testid="tweet"]',
-      'article[role="article"]',
-      '[data-testid="tweetText"]'
-    ];
-
-    let posts = null;
-    for (const selector of postSelectors) {
-      try {
-        posts = page.locator(selector);
-        await posts.first().waitFor({ state: 'visible', timeout: 10000 });
-        console.log(`✅ Found posts with selector: ${selector}`);
-        break;
-      } catch (e) {
-        console.log(`❌ Posts not found with selector: ${selector}`);
-        continue;
-      }
-    }
-
-    if (!posts) {
-      throw new Error('No posts found on the page');
-    }
-
-    // Step 6: Click first post
-    const firstPost = posts.first();
-    console.log("🎯 Clicking first post...");
-
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Opening first post...',
-      step: 'opening_post',
-      liveViewUrl: liveViewUrl
-    });
-
-    await cursor.click(firstPost);
-    await page.waitForTimeout(4000 + Math.random() * 2000);
-
-    // Step 7: Scroll to read content
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Reading post content...',
-      step: 'reading_content',
-      liveViewUrl: liveViewUrl
-    });
-
-    console.log("📜 Scrolling to read content...");
-    await page.mouse.wheel(0, 300);
-    await page.waitForTimeout(2000 + Math.random() * 1000);
-    await page.mouse.wheel(0, 200);
-    await page.waitForTimeout(2000 + Math.random() * 1000);
-
-    // Step 8: Look for like button
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Looking for like button...',
-      step: 'finding_like',
-      liveViewUrl: liveViewUrl
-    });
-
-    console.log("❤️ Looking for like button...");
-
-    const likeSelectors = [
-      '[data-testid="like"]',
-      'button[aria-label*="like"]',
-      'button[aria-label*="Like"]',
-      '[role="button"]:has([data-testid="heart"])'
-    ];
-
-    let likeButton = null;
-    for (const selector of likeSelectors) {
-      try {
-        likeButton = page.locator(selector);
-        await likeButton.first().waitFor({ state: 'visible', timeout: 5000 });
-        console.log(`✅ Found like button with selector: ${selector}`);
-        break;
-      } catch (e) {
-        continue;
-      }
-    }
-
-    if (likeButton) {
-      console.log("❤️ Liking post...");
-      await cursor.click(likeButton.first());
-      await page.waitForTimeout(2000 + Math.random() * 1000);
-
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'Post liked! Looking for reply button...',
-        step: 'post_liked',
-        liveViewUrl: liveViewUrl
-      });
-    } else {
-      console.log("⚠️ Like button not found, skipping like action");
-    }
-
-    // Step 9: Look for reply button
-    console.log("💬 Looking for reply button...");
-
-    const replySelectors = [
-      '[data-testid="reply"]',
-      'button[aria-label*="reply"]',
-      'button[aria-label*="Reply"]',
-      '[role="button"]:has([data-testid="reply"])'
-    ];
-
-    let replyButton = null;
-    for (const selector of replySelectors) {
-      try {
-        replyButton = page.locator(selector);
-        await replyButton.first().waitFor({ state: 'visible', timeout: 5000 });
-        console.log(`✅ Found reply button with selector: ${selector}`);
-        break;
-      } catch (e) {
-        continue;
-      }
-    }
-
-    if (replyButton) {
-      console.log("💬 Opening reply...");
-      await cursor.click(replyButton.first());
-      await page.waitForTimeout(3000 + Math.random() * 2000);
-
-      // Step 10: Look for comment box
-      broadcastToClients({
-        type: 'automation_progress',
-        message: 'Typing comment...',
-        step: 'typing_comment',
-        liveViewUrl: liveViewUrl
-      });
-
-      console.log("📝 Looking for comment box...");
-
-      const commentSelectors = [
-        '[data-testid="tweetTextarea_0"]',
-        'div[contenteditable="true"]',
-        'textarea[placeholder*="reply"]',
-        'div[role="textbox"]'
-      ];
-
-      let commentBox = null;
-      for (const selector of commentSelectors) {
-        try {
-          commentBox = page.locator(selector);
-          await commentBox.first().waitFor({ state: 'visible', timeout: 5000 });
-          console.log(`✅ Found comment box with selector: ${selector}`);
-          break;
-        } catch (e) {
-          continue;
-        }
-      }
-
-      if (commentBox) {
-        console.log("📝 Clicking comment box...");
-        await cursor.click(commentBox.first());
-        await page.waitForTimeout(500);
-
-        // OFFICIAL: AI-powered reply generation
-        console.log("🤖 Generating AI-powered reply...");
-
-        // Extract the post content first
-        const postContent = await extractPostContent(page);
-        console.log('📄 Extracted post content for AI:', postContent.substring(0, 100) + '...');
-
-        // Add thinking delay (human-like behavior)
-        const thinkingDelay = 2000 + Math.random() * 3000; // 2-5 seconds
-        console.log(`🤔 Thinking for ${Math.round(thinkingDelay/1000)}s before replying...`);
-        await page.waitForTimeout(thinkingDelay);
-
-        // Generate AI reply based on post content
-        let replyText;
-        try {
-          replyText = await AIReplyService.generateReply(postContent, 'conversational');
-          console.log('✅ AI Generated Reply:', replyText);
-
-          broadcastToClients({
-            type: 'automation_progress',
-            message: `AI generated reply: "${replyText.substring(0, 50)}..."`,
-            step: 'ai_reply_generated',
-            liveViewUrl: liveViewUrl
-          });
-        } catch (aiError: any) {
-          console.log('⚠️ AI generation failed, using fallback:', aiError.message);
-          replyText = "Interesting perspective! Thanks for sharing this. 👍";
-
-          broadcastToClients({
-            type: 'automation_progress',
-            message: 'AI service unavailable, using fallback reply',
-            step: 'ai_service_fallback',
-            liveViewUrl: liveViewUrl
-          });
-        }
-
-        console.log("⌨️ Starting human-like typing...");
-
-        // Step 1: Ensure text area is properly focused
-        await commentBox.first().focus();
-        await page.waitForTimeout(500);
-
-        // Step 2: Clear any existing content first
-        await page.keyboard.press('Control+a');
-        await page.waitForTimeout(100);
-        await page.keyboard.press('Delete');
-        await page.waitForTimeout(300);
-
-        // Step 3: Type with human-like behavior using our custom function
-        await typeWithHumanBehavior(page, replyText);
-
-        // Wait for Twitter's content validation
-        await page.waitForTimeout(2000);
-
-        // Validate content meets requirements (but preserve AI-generated content)
-        await validateReplyContent(page, commentBox.first(), replyText);
-
-        // Additional wait for UI state to update
-        await page.waitForTimeout(1000);
-
-        // Step 11: Submit reply with button state validation
-        console.log("📤 Looking for submit button...");
-        const submitButton = page.locator('[data-testid="tweetButtonInline"]');
-        await submitButton.waitFor({ state: 'visible', timeout: 10000 });
-
-        // OFFICIAL: Wait for button to become enabled
-        console.log("⏳ Waiting for reply button to become enabled...");
-        let buttonEnabled = false;
-        let attempts = 0;
-        const maxAttempts = 15; // 30 seconds total
-
-        while (!buttonEnabled && attempts < maxAttempts) {
-          try {
-            // OFFICIAL: Check if button is enabled using Playwright's isEnabled()
-            buttonEnabled = await submitButton.isEnabled();
-
-            if (buttonEnabled) {
-              console.log("✅ Reply button is now enabled!");
-              break;
-            } else {
-              console.log(`⏳ Button still disabled, attempt ${attempts + 1}/${maxAttempts}`);
-
-              // Try triggering content validation
-              if (attempts === 5) {
-                // Add a space and remove it to trigger validation
-                await commentBox.first().focus();
-                await page.keyboard.press('Space');
-                await page.waitForTimeout(100);
-                await page.keyboard.press('Backspace');
-              }
-
-              await page.waitForTimeout(2000);
-              attempts++;
-            }
-          } catch (error) {
-            console.log("⚠️ Error checking button state:", error.message);
-            attempts++;
-            await page.waitForTimeout(2000);
-          }
-        }
-
-        if (!buttonEnabled) {
-          // OFFICIAL: Try alternative submit button selectors
-          console.log("⚠️ Primary button still disabled, trying alternatives...");
-
-          const alternativeSelectors = [
-            '[data-testid="tweetButton"]',
-            'button[type="submit"]',
-            '[role="button"]:has-text("Reply")',
-            'button:has-text("Reply")'
-          ];
-
-          for (const selector of alternativeSelectors) {
-            try {
-              const altButton = page.locator(selector);
-              await altButton.waitFor({ state: 'visible', timeout: 3000 });
-
-              const isEnabled = await altButton.isEnabled();
-              if (isEnabled) {
-                console.log(`✅ Found enabled alternative button: ${selector}`);
-                await cursor.click(altButton);
-                await page.waitForTimeout(2000);
-
-                // Human-like browsing simulation AFTER successful reply
-                console.log("✅ Reply completed! Now browsing YouTube like a human...");
-
-                broadcastToClients({
-                  type: 'automation_progress',
-                  message: 'Reply sent! Opening YouTube for realistic browsing behavior...',
-                  step: 'post_reply_youtube',
-                  liveViewUrl: liveViewUrl
-                });
-
-                // Call YouTube browsing function AFTER reply completion
-                await openYouTubeAndScroll(page, sessionId);
-
-                broadcastToClients({
-                  type: 'automation_progress',
-                  message: 'Returned from YouTube browsing. Starting follow automation...',
-                  step: 'youtube_complete',
-                  liveViewUrl: liveViewUrl
-                });
-
-                // NEW: Follow automation phase AFTER YouTube
-                console.log('👥 Starting follow automation phase...');
-
-                // Add human-like delay before follow automation
-                await page.waitForTimeout(3000 + Math.random() * 3000);
-
-                // Execute follow automation
-                const followSuccess = await performFollowAutomation(page, sessionId, liveViewUrl);
-
-                if (followSuccess) {
-                  broadcastToClients({
-                    type: 'automation_progress',
-                    message: 'Follow automation completed successfully!',
-                    step: 'follow_automation_complete',
-                    liveViewUrl: liveViewUrl
-                  });
-                } else {
-                  broadcastToClients({
-                    type: 'automation_progress',
-                    message: 'Follow automation skipped, continuing...',
-                    step: 'follow_automation_skipped',
-                    liveViewUrl: liveViewUrl
-                  });
-                }
-
-                // Final automation cycle complete
-                broadcastToClients({
-                  type: 'automation_complete',
-                  message: 'Complete automation cycle finished! Session remains active.',
-                  sessionId: sessionId,
-                  liveViewUrl: liveViewUrl,
-                  summary: {
-                    login: '✅ Login completed',
-                    navigation: '✅ Navigated to Following feed',
-                    interaction: '✅ Opened and read first post',
-                    engagement: '✅ Liked post and replied',
-                    browsing: '✅ YouTube browsing simulation',
-                    followAutomation: '✅ Follow automation and profile engagement',
-                    completion: '✅ Extended cycle complete - session active'
-                  }
-                });
-                return; // Exit function if successful
-              }
-            } catch (error) {
-              console.log(`⚠️ Alternative ${selector} not found or disabled`);
-            }
-          }
-
-          throw new Error("All reply buttons are disabled - content may not meet Twitter requirements");
-        }
-
-        // OFFICIAL: Click the enabled button
-        console.log("📤 Submitting reply...");
-        await cursor.click(submitButton);
-        await page.waitForTimeout(3000);
-
-        // OFFICIAL: Verify submission success
-        try {
-          // Check if modal closed (indicates success)
-          const modalStillOpen = await page.locator('[data-testid="tweetTextarea_0"]').isVisible();
-          if (!modalStillOpen) {
-            console.log("✅ Reply submitted successfully - modal closed");
-
-            // Human-like browsing simulation AFTER successful reply
-            console.log("✅ Reply completed! Now browsing YouTube like a human...");
-
-            broadcastToClients({
-              type: 'automation_progress',
-              message: 'Reply sent! Opening YouTube for realistic browsing behavior...',
-              step: 'post_reply_youtube',
-              liveViewUrl: liveViewUrl
-            });
-
-            // Call YouTube browsing function AFTER reply completion
-            await openYouTubeAndScroll(page, sessionId);
-
-            broadcastToClients({
-              type: 'automation_progress',
-              message: 'Returned from YouTube browsing. Starting follow automation...',
-              step: 'youtube_complete',
-              liveViewUrl: liveViewUrl
-            });
-
-            // NEW: Follow automation phase AFTER YouTube
-            console.log('👥 Starting follow automation phase...');
-
-            // Add human-like delay before follow automation
-            await page.waitForTimeout(3000 + Math.random() * 3000);
-
-            // Execute follow automation
-            const followSuccess = await performFollowAutomation(page, sessionId, liveViewUrl);
-
-            if (followSuccess) {
-              broadcastToClients({
-                type: 'automation_progress',
-                message: 'Follow automation completed successfully!',
-                step: 'follow_automation_complete',
-                liveViewUrl: liveViewUrl
-              });
-            } else {
-              broadcastToClients({
-                type: 'automation_progress',
-                message: 'Follow automation skipped, continuing...',
-                step: 'follow_automation_skipped',
-                liveViewUrl: liveViewUrl
-              });
-            }
-
-            // Final automation cycle complete
-            broadcastToClients({
-              type: 'automation_complete',
-              message: 'Complete automation cycle finished! Session remains active.',
-              sessionId: sessionId,
-              liveViewUrl: liveViewUrl,
-              summary: {
-                login: '✅ Login completed',
-                navigation: '✅ Navigated to Following feed',
-                interaction: '✅ Opened and read first post',
-                engagement: '✅ Liked post and replied',
-                browsing: '✅ YouTube browsing simulation',
-                followAutomation: '✅ Follow automation and profile engagement',
-                completion: '✅ Extended cycle complete - session active'
-              }
-            });
-            
-            // Update cookies after successful automation
-            await saveCookiesToDatabase(sessionId, page);
-          } else {
-            console.log("⚠️ Modal still open - checking for error messages");
-
-            // Look for error messages
-            const errorMessage = await page.locator('[role="alert"]').textContent().catch(() => null);
-            if (errorMessage) {
-              console.log("❌ Twitter error:", errorMessage);
-            }
-          }
-        } catch (error) {
-          console.log("⚠️ Could not verify submission status");
-        }
-      } else {
-        console.log("⚠️ Comment box not found, skipping reply");
-      }
-    } else {
-      console.log("⚠️ Reply button not found, skipping reply action");
-    }
-
-    // Step 12: Automation complete
-    console.log("🎉 Automation completed successfully!");
-
-    broadcastToClients({
-      type: 'automation_complete',
-      message: 'Extended automation cycle completed with follow engagement! Session remains active.',
-      sessionId: sessionId,
-      liveViewUrl: liveViewUrl,
-      summary: {
-        login: '✅ Login completed',
-        navigation: '✅ Navigated to Following feed',
-        interaction: '✅ Opened and read first post',
-        engagement: '✅ Liked post and replied',
-        browsing: '✅ YouTube browsing simulation',
-        followAutomation: '✅ Follow automation and profile engagement',
-        completion: '✅ Extended cycle complete - session active'
-      }
-    });
-
-  } catch (error: any) {
-    console.error("❌ Automation error:", error);
-    broadcastToClients({
-      type: 'automation_error',
-      error: error.message,
-      sessionId: sessionId,
-      liveViewUrl: liveViewUrl
-    });
-  }
-}
-
-// OFFICIAL: Validate reply content meets Twitter requirements while preserving AI content
-async function validateReplyContent(page: Page, commentBox: any, originalReply?: string) {
-  try {
-    // Get current text content
-    const currentText = await commentBox.inputValue();
-    console.log(`📝 Current text: "${currentText}"`);
-
-    // Check text length (Twitter minimum is usually 1 character, but longer is better)
-    if (currentText.length < 10) {
-      console.log("⚠️ Text too short, enhancing AI reply...");
-
-      // If we have original AI reply, enhance it instead of replacing
-      if (originalReply && originalReply.length > 5) {
-        const enhancedReply = originalReply + " 👍";
-        await commentBox.focus();
-        await commentBox.fill(enhancedReply);
-        console.log(`✅ Enhanced AI reply: "${enhancedReply}"`);
-      } else {
-        // Fallback enhancement
-        await commentBox.focus();
-        await page.keyboard.press('End');
-        await page.keyboard.type(" Thanks for sharing! 👍", { delay: 50 });
-      }
-      await page.waitForTimeout(1000);
-    }
-
-    // Trigger content validation by simulating user behavior
-    await commentBox.focus();
-    await page.keyboard.press('End');
-    await page.waitForTimeout(500);
-
-    return true;
-  } catch (error) {
-    console.log("⚠️ Content validation error:", error.message);
-    return false;
-  }
-}
-
-// Extract post content using robust Playwright selectors
-async function extractPostContent(page: Page): Promise<string> {
-  try {
-    console.log('📝 Extracting post content...');
-
-    // Multiple selectors for robust text extraction (official Playwright methods)
-    const postSelectors = [
-      '[data-testid="tweetText"]',           // Primary tweet text
-      '[data-testid="tweet"] [lang]',       // Language-specific content  
-      'article [dir="auto"]',               // Auto-direction text
-      '[data-testid="tweet"] span',         // Fallback spans
-      'article div[lang]'                   // Alternative language div
-    ];
-
-    let extractedText = '';
-
-    // Try each selector until we find content
-    for (const selector of postSelectors) {
-      try {
-        // Use official Playwright locator method
-        const elements = page.locator(selector);
-        const count = await elements.count();
-
-        if (count > 0) {
-          // Extract text using official textContent method
-          const texts = await elements.allTextContents();
-          const combinedText = texts.join(' ').trim();
-
-          if (combinedText.length > 10) { // Ensure meaningful content
-            extractedText = combinedText;
-            console.log(`✅ Content extracted using selector: ${selector}`);
-            break;
-          }
-        }
-      } catch (selectorError) {
-        console.log(`⚠️ Selector ${selector} failed, trying next...`);
-        continue;
-      }
-    }
-
-    // Clean and validate extracted text
-    if (extractedText.length > 0) {
-      // Remove extra whitespace and clean up
-      extractedText = extractedText.replace(/\s+/g, ' ').trim();
-
-      // Limit length for AI processing (Gemini works best with reasonable input)
-      if (extractedText.length > 500) {
-        extractedText = extractedText.substring(0, 497) + '...';
-      }
-
-      console.log('📄 Extracted post content:', extractedText.substring(0, 100) + '...');
-      return extractedText;
-    } else {
-      console.log('⚠️ No post content found, using fallback');
-      return 'Interesting post! Thanks for sharing.';
-    }
-
-  } catch (error: any) {
-    console.error('❌ Post content extraction failed:', error.message);
-    return 'Great post! Thanks for sharing this.';
-  }
-}
-
-// Wait for user to manually navigate to Following feed (avoiding Cloudflare)
-async function waitForFollowingFeedManually(page: Page, liveViewUrl: string) {
-  const maxWait = 300000; // 5 minutes for manual navigation
-  const checkInterval = 5000; // 5 seconds
-  let elapsed = 0;
-
-  console.log("⏳ Waiting for manual navigation to Following feed...");
-
-  while (elapsed < maxWait) {
-    try {
-      const currentUrl = await page.url();
-      console.log(`🔍 Current URL: ${currentUrl}`);
-
-      // Check if we're past Cloudflare and on a valid X page
-      const isValidXPage = currentUrl.includes('x.com') && 
-                          !currentUrl.includes('/account/access') &&
-                          !currentUrl.includes('/login') &&
-                          !currentUrl.includes('/logout') &&
-                          !currentUrl.includes('/flow');
-
-      if (isValidXPage) {
-        // Check for Following feed specifically
-        if (currentUrl.includes('/following')) {
-          console.log("✅ Following feed detected via URL");
-          return true;
-        }
-
-        // Check for Following feed content
-        try {
-          const followingElements = await page.$$eval(
-            'h2, [data-testid="primaryColumn"] h2, div[role="heading"]',
-            elements => elements.some(el => el.textContent?.includes('Following'))
-          );
-
-          if (followingElements) {
-            console.log("✅ Following feed detected via content");
-            return true;
-          }
-
-          // Check for any valid feed with posts (home feed is acceptable too)
-          const hasPosts = await page.$('[data-testid="tweet"]');
-          if (hasPosts && (currentUrl.includes('/home') || currentUrl.includes('/following'))) {
-            console.log("✅ Valid feed with posts detected");
-            return true;
-          }
-        } catch (elementError) {
-          console.log("⚠️ Element check failed:", elementError.message);
-        }
-      } else if (currentUrl.includes('/account/access') || currentUrl.includes('challenges.cloudflare.com')) {
-        console.log("⚠️ Still on Cloudflare challenge page, waiting for manual resolution...");
-      }
-
-    } catch (error: any) {
-      console.log("⚠️ Navigation detection error:", error.message);
-    }
-
-    await page.waitForTimeout(checkInterval);
-    elapsed += checkInterval;
-
-    // Periodic updates
-    if (elapsed % 30000 === 0) {
-      const remaining = Math.floor((maxWait - elapsed) / 1000);
-      broadcastToClients({
-        type: 'automation_progress',
-        message: `Waiting for manual navigation to feed (${remaining}s remaining)...`,
-        step: 'manual_navigation_wait',
-        liveViewUrl: liveViewUrl
-      });
-    }
-  }
-
-  console.log("❌ Manual navigation timeout");
-  return false;
-}
-
-// Check if login is needed
-async function checkIfLoginNeeded(page: Page) {
-  try {
-    console.log("🔍 Checking if login is needed...");
-
-    // Method 1: Check for login modal/dialog
-    const loginModal = await page.$('[aria-labelledby*="modal-header"]');
-    const signInModal = await page.$('div:has-text("Sign in to X")');
-    const loginDialog = await page.$('[role="dialog"]');
-
-    // Method 2: Check for login form elements
-    const loginButton = await page.$('[data-testid="LoginForm_Login_Button"]');
-    const emailInput = await page.$('[name="text"]');
-    const passwordInput = await page.$('[name="password"]');
-    const usernameInput = await page.$('input[autocomplete="username"]');
-
-    // Method 3: Check for login-specific text content
-    const signInText = await page.$('text="Sign in to X"');
-    const loginText = await page.$('text="Log in"');
-    const nextButtonText = await page.$('text="Next"');
-
-    // Method 4: Check current URL patterns
-    const currentUrl = await page.url();
-    const isLoginUrl = currentUrl.includes('/login') || 
-                      currentUrl.includes('/flow/login') || 
-                      currentUrl.includes('/i/flow/login');
-
-    // Method 5: Check for absence of authenticated elements
-    const homeButton = await page.$('[data-testid="AppTabBar_Home_Link"]');
-    const profileButton = await page.$('[data-testid="AppTabBar_Profile_Link"]');
-    const composeButton = await page.$('[data-testid="SideNav_NewTweet_Button"]');
-    const authenticatedElements = homeButton || profileButton || composeButton;
-
-    const loginNeeded = !!(
-      loginModal || 
-      signInModal || 
-      loginDialog ||
-      loginButton || 
-      emailInput || 
-      passwordInput || 
-      usernameInput ||
-      signInText ||
-      loginText ||
-      nextButtonText ||
-      isLoginUrl ||
-      !authenticatedElements
-    );
-
-    console.log(`🔍 Login detection results:
-      - Login modal/dialog found: ${!!(loginModal || signInModal || loginDialog)}
-      - Login form elements found: ${!!(loginButton || emailInput || passwordInput || usernameInput)}
-      - Login text found: ${!!(signInText || loginText || nextButtonText)}
-      - Is login URL: ${isLoginUrl}
-      - Authenticated elements missing: ${!authenticatedElements}
-      - Final result: Login ${loginNeeded ? 'NEEDED' : 'NOT NEEDED'}`);
-
-    return loginNeeded;
-  } catch (error: any) {
-    console.log("⚠️ Login check failed, assuming login needed:", error);
-    return true; // Assume login needed if check fails
-  }
-}
-
-// Human-like YouTube browsing simulation with live view URL
-async function openYouTubeAndScroll(page: Page, sessionId: string) {
-  try {
-    console.log("🎥 Opening YouTube in new tab for human-like browsing...");
-
-    // Get the browser context from the current page
-    const context = page.context();
-
-    // Create new page (tab) in same context
-    const youtubeTab = await context.newPage();
-    console.log("✅ New YouTube tab created");
-
-    // Navigate to YouTube with proper wait
-    await youtubeTab.goto('https://www.youtube.com', {
-      waitUntil: 'networkidle',
-      timeout: 30000
-    });
-    console.log("✅ YouTube loaded");
-
-    // CRITICAL: Get live view URLs for all tabs after YouTube opens
-    try {
-      const browserbase = new Browserbase({
-        apiKey: process.env.BROWSERBASE_API_KEY!,
-      });
-
-      // Get all tab live view URLs
-      const liveViewLinks = await browserbase.sessions.debug(sessionId);
-      const allTabs = liveViewLinks.pages;
-
-      console.log(`📺 Found ${allTabs.length} tabs with live view URLs`);
-
-      // Find YouTube tab (should be the newest one)
-      const youtubeTabLiveView = allTabs.find(tab => 
-        tab.url && tab.url.includes('youtube.com')
-      );
-
-      if (youtubeTabLiveView) {
-        console.log(`🎥 YouTube tab live view URL: ${youtubeTabLiveView.debuggerFullscreenUrl}`);
-
-        // Broadcast YouTube tab live view URL for secondary iframe
-        broadcastToClients({
-          type: 'secondary_tab_opened',
-          tabType: 'youtube',
-          tabName: 'YouTube Tab',
-          tabUrl: youtubeTabLiveView.debuggerFullscreenUrl,
-          message: 'YouTube tab opened - now visible in secondary live view',
-          allTabs: allTabs.map(tab => ({
-            title: tab.title,
-            url: tab.url,
-            liveViewUrl: tab.debuggerFullscreenUrl
-          }))
-        });
-      }
-    } catch (liveViewError) {
-      console.log("⚠️ Could not get YouTube tab live view URL:", liveViewError.message);
-    }
-
-    // Wait for page to fully load
-    await youtubeTab.waitForTimeout(2000 + Math.random() * 3000);
-
-    // Human-like scrolling pattern (1600px total in chunks)
-    const scrollSteps = 4; // 400px per step
-    const scrollAmount = 400;
-
-    for (let i = 0; i < scrollSteps; i++) {
-      console.log(`📜 Scrolling step ${i + 1}/${scrollSteps}`);
-
-      // Use mouse.wheel() for natural scrolling
-      await youtubeTab.mouse.wheel(0, scrollAmount);
-
-      // Human-like pause between scrolls (1-3 seconds)
-      const pauseTime = 1000 + Math.random() * 2000;
-      await youtubeTab.waitForTimeout(pauseTime);
-    }
-
-    // Browse YouTube for 5-10 seconds (realistic human behavior)
-    const browsingTime = 5000 + Math.random() * 5000;
-    console.log(`👀 Browsing YouTube for ${Math.round(browsingTime/1000)}s...`);
-    await youtubeTab.waitForTimeout(browsingTime);
-
-    // Notify before closing
-    broadcastToClients({
-      type: 'secondary_tab_closing',
-      tabType: 'youtube',
-      message: 'Closing YouTube tab, returning to X...'
-    });
-
-    // Close the YouTube tab
-    await youtubeTab.close();
-    console.log("✅ YouTube tab closed, returning to X");
-
-    // Notify that secondary tab is closed
-    broadcastToClients({
-      type: 'secondary_tab_closed',
-      tabType: 'youtube',
-      message: 'YouTube tab closed - secondary view hidden'
-    });
-
-    // Small delay before continuing
-    await page.waitForTimeout(1000 + Math.random() * 2000);
-
-  } catch (error: any) {
-    console.error("❌ YouTube tab error:", error.message);
-    // Don't throw - continue automation even if YouTube fails
-  }
-}
-
-// Follow automation: Navigate to "Who to follow", follow random account, engage with their content
-async function performFollowAutomation(page: Page, sessionId: string, liveViewUrl: string) {
-  try {
-    console.log('👥 Starting follow automation...');
-
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Starting follow automation - looking for recommendations...',
-      step: 'follow_automation_start',
-      liveViewUrl: liveViewUrl
-    });
-
-    // Step 1: Look for "Who to follow" recommendations
-    console.log('🔍 Looking for "Who to follow" recommendations...');
-
-    const whoToFollowSelectors = [
-      '[data-testid*="follow"]',
-      'div[aria-label*="Follow"]',
-      'button[data-testid*="follow"]',
-      'div:has-text("Who to follow")',
-      'aside div:has-text("Follow")'
-    ];
-
-    let followRecommendations = [];
-
-    // Try to find follow recommendations
-    for (const selector of whoToFollowSelectors) {
-      try {
-        const elements = page.locator(selector);
-        const count = await elements.count();
-
-        if (count > 0) {
-          console.log(`✅ Found ${count} follow elements with selector: ${selector}`);
-
-          for (let i = 0; i < Math.min(count, 10); i++) {
-            const element = elements.nth(i);
-            const isVisible = await element.isVisible();
-            const text = await element.textContent().catch(() => '');
-
-            if (isVisible && text && text.toLowerCase().includes('follow') && !text.toLowerCase().includes('following')) {
-              followRecommendations.push(element);
-            }
-          }
-
-          if (followRecommendations.length > 0) {
-            console.log(`🎯 Found ${followRecommendations.length} follow recommendations`);
-            break;
-          }
-        }
-      } catch (selectorError) {
-        console.log(`⚠️ Selector ${selector} failed, trying next...`);
-        continue;
-      }
-    }
-
-    // If no recommendations found, try scrolling
-    if (followRecommendations.length === 0) {
-      console.log('📜 Scrolling to find follow recommendations...');
-
-      for (let scroll = 0; scroll < 3; scroll++) {
-        await page.mouse.wheel(0, 800);
-        await page.waitForTimeout(2000);
-
-        const scrollElements = page.locator('[data-testid*="follow"]');
-        const scrollCount = await scrollElements.count();
-
-        if (scrollCount > 0) {
-          for (let i = 0; i < Math.min(scrollCount, 5); i++) {
-            const element = scrollElements.nth(i);
-            const isVisible = await element.isVisible();
-            const text = await element.textContent().catch(() => '');
-
-            if (isVisible && text && text.toLowerCase().includes('follow') && !text.toLowerCase().includes('following')) {
-              followRecommendations.push(element);
-            }
-          }
-        }
-
-        if (followRecommendations.length > 0) break;
-      }
-    }
-
-    if (followRecommendations.length === 0) {
-      console.log('⚠️ No follow recommendations found, skipping follow automation');
-      return false;
-    }
-
-    // Step 2: Select random recommendation and follow
-    const randomIndex = Math.floor(Math.random() * followRecommendations.length);
-    const selectedFollowButton = followRecommendations[randomIndex];
-
-    console.log(`🎲 Selected random recommendation ${randomIndex + 1} of ${followRecommendations.length}`);
-
-    broadcastToClients({
-      type: 'automation_progress',
-      message: `Found ${followRecommendations.length} recommendations, following random account...`,
-      step: 'following_account',
-      liveViewUrl: liveViewUrl
-    });
-
-    // Get username before clicking follow
-    let username = '';
-    try {
-      const parentElement = selectedFollowButton.locator('xpath=ancestor::div[contains(@data-testid, "UserCell") or contains(@class, "user")]').first();
-      const usernameElement = parentElement.locator('[data-testid="UserName"], [data-testid="UserHandle"], a[href*="/"]').first();
-      const usernameText = await usernameElement.textContent().catch(() => '');
-
-      if (usernameText && usernameText.includes('@')) {
-        username = usernameText.replace('@', '').trim();
-      } else if (usernameText) {
-        const href = await usernameElement.getAttribute('href').catch(() => '');
-        if (href && href.includes('/')) {
-          username = href.split('/').pop() || '';
-        }
-      }
-    } catch (usernameError) {
-      console.log('⚠️ Could not extract username, will try alternative method');
-    }
-
-    // Click follow button with human-like behavior
-    await page.waitForTimeout(1000 + Math.random() * 2000);
-
-    try {
-      const { createCursor } = await import('ghost-cursor-playwright');
-      const cursor = await createCursor(page);
-      await cursor.click(selectedFollowButton);
-    } catch (cursorError) {
-      await selectedFollowButton.click();
-    }
-
-    console.log('✅ Follow button clicked');
-    await page.waitForTimeout(2000 + Math.random() * 2000);
-
-    // Step 3: Navigate to user's profile
-    if (!username) {
-      console.log('⚠️ Username not found, trying to find profile link...');
-
-      const profileLinks = page.locator('a[href*="/"][href$="' + username + '"], a[href*="twitter.com/"], a[href*="x.com/"]');
-      const linkCount = await profileLinks.count();
-
-      if (linkCount > 0) {
-        const profileLink = profileLinks.first();
-        const href = await profileLink.getAttribute('href');
-        if (href) {
-          username = href.split('/').pop() || '';
-        }
-      }
-    }
-
-    if (username) {
-      console.log(`👤 Navigating to profile: @${username}`);
-
-      broadcastToClients({
-        type: 'automation_progress',
-        message: `Following @${username}, navigating to their profile...`,
-        step: 'navigating_to_profile',
-        liveViewUrl: liveViewUrl
-      });
-
-      const profileUrl = `https://x.com/${username}`;
-      await page.goto(profileUrl, { waitUntil: 'networkidle', timeout: 30000 });
-      await page.waitForTimeout(3000 + Math.random() * 2000);
-
-      console.log('✅ Profile loaded successfully');
-
-      // Step 4: Engage with second post
-      return await engageWithSecondPost(page, sessionId, liveViewUrl, username);
-
-    } else {
-      console.log('❌ Could not determine username for profile navigation');
-      return false;
-    }
-
-  } catch (error: any) {
-    console.error('❌ Follow automation failed:', error.message);
-
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Follow automation encountered an error, continuing...',
-      step: 'follow_automation_error',
-      liveViewUrl: liveViewUrl
-    });
-
-    return false;
-  }
-}
-
-// Engage with the second post on a user's profile (skip pinned posts)
-async function engageWithSecondPost(page: Page, sessionId: string, liveViewUrl: string, username: string) {
-  try {
-    console.log(`📱 Looking for posts on @${username}'s profile...`);
-
-    broadcastToClients({
-      type: 'automation_progress',
-      message: `Analyzing @${username}'s posts, looking for second post...`,
-      step: 'analyzing_posts',
-      liveViewUrl: liveViewUrl
-    });
-
-    await page.waitForTimeout(3000);
-
-    const postSelectors = [
-      '[data-testid="tweet"]',
-      'article[data-testid="tweet"]',
-      'div[data-testid="tweet"]',
-      'article[role="article"]',
-      'div[aria-label*="tweet"]'
-    ];
-
-    let posts = [];
-
-    // Find all posts on the profile
-    for (const selector of postSelectors) {
-      try {
-        const elements = page.locator(selector);
-        const count = await elements.count();
-
-        if (count > 0) {
-          console.log(`📄 Found ${count} posts with selector: ${selector}`);
-
-          for (let i = 0; i < Math.min(count, 10); i++) {
-            const post = elements.nth(i);
-            const isVisible = await post.isVisible();
-
-            if (isVisible) {
-              posts.push(post);
-            }
-          }
-
-          if (posts.length >= 2) {
-            console.log(`✅ Found ${posts.length} posts, proceeding with engagement`);
-            break;
-          }
-        }
-      } catch (selectorError) {
-        console.log(`⚠️ Post selector ${selector} failed, trying next...`);
-        continue;
-      }
-    }
-
-    if (posts.length < 2) {
-      console.log('⚠️ Not enough posts found, scrolling to load more...');
-
-      await page.mouse.wheel(0, 1000);
-      await page.waitForTimeout(3000);
-
-      const scrollPosts = page.locator('[data-testid="tweet"]');
-      const scrollCount = await scrollPosts.count();
-
-      posts = [];
-      for (let i = 0; i < Math.min(scrollCount, 10); i++) {
-        const post = scrollPosts.nth(i);
-        const isVisible = await post.isVisible();
-        if (isVisible) {
-          posts.push(post);
-        }
-      }
-    }
-
-    if (posts.length < 2) {
-      console.log('❌ Could not find enough posts to engage with');
-      return false;
-    }
-
-    // Select the second post (index 1, skipping potential pinned post)
-    const secondPost = posts[1];
-
-    console.log('🎯 Targeting second post for engagement...');
-
-    broadcastToClients({
-      type: 'automation_progress',
-      message: 'Found second post, scrolling to view and engaging...',
-      step: 'engaging_second_post',
-      liveViewUrl: liveViewUrl
-    });
-
-    // Scroll to the second post
-    await secondPost.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(2000 + Math.random() * 2000);
-
-    // Extract post content for AI reply
-    const postContent = await extractPostContentFromElement(secondPost);
-
-    // Step 1: Like the second post
-    console.log('❤️ Liking the second post...');
-
-    const likeSelectors = [
-      '[data-testid="like"]',
-      '[aria-label*="Like"]',
-      'button[aria-label*="like"]',
-      '[data-testid="tweet"] button[aria-label*="Like"]'
-    ];
-
-    let likeButton = null;
-    for (const selector of likeSelectors) {
-      try {
-        const likeElement = secondPost.locator(selector).first();
-        const isVisible = await likeElement.isVisible();
-        if (isVisible) {
-          likeButton = likeElement;
-          console.log(`✅ Found like button with selector: ${selector}`);
-          break;
-        }
-      } catch (likeError) {
-        continue;
-      }
-    }
-
-    if (likeButton) {
-      try {
-        const { createCursor } = await import('ghost-cursor-playwright');
-        const cursor = await createCursor(page);
-        await cursor.click(likeButton);
-      } catch (cursorError) {
-        await likeButton.click();
-      }
-
-      console.log('✅ Second post liked successfully');
-      await page.waitForTimeout(2000 + Math.random() * 2000);
-    } else {
-      console.log('⚠️ Like button not found on second post');
-    }
-
-    // Step 2: Reply to the second post
-    console.log('💬 Opening reply dialog for second post...');
-
-    const replySelectors = [
-      '[data-testid="reply"]',
-      '[aria-label*="Reply"]',
-      'button[aria-label*="reply"]',
-      '[data-testid="tweet"] button[aria-label*="Reply"]'
-    ];
-
-    let replyButton = null;
-    for (const selector of replySelectors) {
-      try {
-        const replyElement = secondPost.locator(selector).first();
-        const isVisible = await replyElement.isVisible();
-        if (isVisible) {
-          replyButton = replyElement;
-          console.log(`✅ Found reply button with selector: ${selector}`);
-          break;
-        }
-      } catch (replyError) {
-        continue;
-      }
-    }
-
-    if (replyButton) {
-      try {
-        const { createCursor } = await import('ghost-cursor-playwright');
-        const cursor = await createCursor(page);
-        await cursor.click(replyButton);
-      } catch (cursorError) {
-        await replyButton.click();
-      }
-
-      console.log('✅ Reply dialog opened');
-      await page.waitForTimeout(2000 + Math.random() * 2000);
-
-      // Generate AI reply for the second post
-      console.log('🤖 Generating AI reply for second post...');
-
-      const thinkingDelay = 2000 + Math.random() * 3000;
-      console.log(`🤔 Thinking for ${Math.round(thinkingDelay/1000)}s before replying...`);
-      await page.waitForTimeout(thinkingDelay);
-
-      let replyText;
-      try {
-        replyText = await AIReplyService.generateReply(postContent, 'supportive');
-        console.log('✅ AI Generated Reply for profile post:', replyText);
-
-        broadcastToClients({
-          type: 'automation_progress',
-          message: `AI generated reply for @${username}'s post: "${replyText.substring(0, 50)}..."`,
-          step: 'ai_reply_generated_profile',
-          liveViewUrl: liveViewUrl
-        });
-      } catch (aiError: any) {
-        console.log('⚠️ AI generation failed, using fallback:', aiError.message);
-        replyText = "Great content! Thanks for sharing your insights. 👍";
-
-        broadcastToClients({
-          type: 'automation_progress',
-          message: 'AI unavailable, using fallback reply for profile post',
-          step: 'ai_fallback_used_profile',
-          liveViewUrl: liveViewUrl
-        });
-      }
-
-      // Find and fill the reply text area
-      const commentSelectors = [
-        '[data-testid="tweetTextarea_0"]',
-        'div[data-testid="tweetTextarea_0"]',
-        '[role="textbox"]',
-        'div[contenteditable="true"]'
-      ];
-
-      let commentBox = null;
-      for (const selector of commentSelectors) {
-        try {
-          const element = page.locator(selector);
-          const isVisible = await element.isVisible();
-          if (isVisible) {
-            commentBox = element;
-            console.log(`✅ Found comment box with selector: ${selector}`);
-            break;
-          }
-        } catch (commentError) {
-          continue;
-        }
-      }
-
-      if (commentBox) {
-        await commentBox.first().focus();
-        await page.waitForTimeout(500);
-
-        await page.keyboard.press('Control+a');
-        await page.waitForTimeout(100);
-        await page.keyboard.press('Delete');
-        await page.waitForTimeout(300);
-
-        // Type with human-like patterns
-        await typeWithHumanBehavior(page, replyText);
-
-        await page.waitForTimeout(2000);
-
-        // Submit the reply
-        const submitSelectors = [
-          '[data-testid="tweetButtonInline"]',
-          'button[data-testid="tweetButton"]',
-          '[role="button"]:has-text("Reply")',
-          'button:has-text("Post")'
-        ];
-
-        let submitButton = null;
-        for (const selector of submitSelectors) {
-          try {
-            const element = page.locator(selector);
-            const isVisible = await element.isVisible();
-            const isEnabled = await element.isEnabled();
-            if (isVisible && isEnabled) {
-              submitButton = element;
-              console.log(`✅ Found submit button with selector: ${selector}`);
-              break;
-            }
-          } catch (submitError) {
-            continue;
-          }
-        }
-
-        if (submitButton) {
-          console.log('📤 Submitting reply to second post...');
-
-          try {
-            const { createCursor } = await import('ghost-cursor-playwright');
-            const cursor = await createCursor(page);
-            await cursor.click(submitButton);
-          } catch (cursorError) {
-            await submitButton.click();
-          }
-
-          await page.waitForTimeout(3000);
-
-          console.log('✅ Reply submitted successfully to second post');
-
-          broadcastToClients({
-            type: 'automation_progress',
-            message: `Successfully replied to @${username}'s post!`,
-            step: 'profile_reply_complete',
-            liveViewUrl: liveViewUrl
-          });
-
-          return true;
-        } else {
-          console.log('❌ Submit button not found or not enabled');
-          return false;
-        }
-      } else {
-        console.log('❌ Comment box not found');
-        return false;
-      }
-    } else {
-      console.log('⚠️ Reply button not found on second post');
-      return false;
-    }
-
-  } catch (error: any) {
-    console.error('❌ Second post engagement failed:', error.message);
-    return false;
-  }
-}
-
 // Extract post content from a specific post element
-async function extractPostContentFromElement(postElement: any): Promise<string> {
+async function extractPostContentFromElement(
+  postElement: any,
+): Promise<string> {
   try {
-    console.log('📝 Extracting post content from specific post...');
+    console.log("📝 Extracting post content from specific post...");
 
     const postSelectors = [
       '[data-testid="tweetText"]',
-      '[lang]',
+      "[lang]",
       '[dir="auto"]',
-      'span'
+      "span",
     ];
 
-    let extractedText = '';
+    let extractedText = "";
 
     for (const selector of postSelectors) {
       try {
@@ -3173,7 +2054,7 @@ async function extractPostContentFromElement(postElement: any): Promise<string> 
 
         if (count > 0) {
           const texts = await elements.allTextContents();
-          const combinedText = texts.join(' ').trim();
+          const combinedText = texts.join(" ").trim();
 
           if (combinedText.length > 10) {
             extractedText = combinedText;
@@ -3187,60 +2068,68 @@ async function extractPostContentFromElement(postElement: any): Promise<string> 
     }
 
     if (extractedText.length > 0) {
-      extractedText = extractedText.replace(/\s+/g, ' ').trim();
+      extractedText = extractedText.replace(/\s+/g, " ").trim();
 
       if (extractedText.length > 500) {
-        extractedText = extractedText.substring(0, 497) + '...';
+        extractedText = extractedText.substring(0, 497) + "...";
       }
 
-      console.log('📄 Extracted post content:', extractedText.substring(0, 100) + '...');
+      console.log(
+        "📄 Extracted post content:",
+        extractedText.substring(0, 100) + "...",
+      );
       return extractedText;
     } else {
-      console.log('⚠️ No post content found, using fallback');
-      return 'Interesting post! Thanks for sharing.';
+      console.log("⚠️ No post content found, using fallback");
+      return "Interesting post! Thanks for sharing.";
     }
-
   } catch (error: any) {
-    console.error('❌ Post content extraction failed:', error.message);
-    return 'Great post! Thanks for sharing this.';
+    console.error("❌ Post content extraction failed:", error.message);
+    return "Great post! Thanks for sharing this.";
   }
 }
 
 // Detect if Cloudflare security challenge is present
 async function detectCloudflareChallenge(page: Page): Promise<boolean> {
   try {
-    // Multiple ways to detect Cloudflare challenge
     const cloudflareIndicators = [
       'text="Verify you are human"',
       'text="X.com needs to review the security of your connection"',
       '[src*="cloudflare"]',
       'text="Cloudflare"',
       'text="Please complete the security check"',
-      '.cf-challenge-running',
-      '#cf-challenge-stage'
+      ".cf-challenge-running",
+      "#cf-challenge-stage",
     ];
-    
+
     for (const indicator of cloudflareIndicators) {
-      const isPresent = await page.locator(indicator).isVisible().catch(() => false);
+      const isPresent = await page
+        .locator(indicator)
+        .isVisible()
+        .catch(() => false);
       if (isPresent) {
-        console.log(`🛡️ Cloudflare challenge detected with indicator: ${indicator}`);
+        console.log(
+          `🛡️ Cloudflare challenge detected with indicator: ${indicator}`,
+        );
         return true;
       }
     }
-    
-    // Check URL for Cloudflare patterns
+
     const currentUrl = await page.url();
-    if (currentUrl.includes('cloudflare') || currentUrl.includes('challenge') || currentUrl.includes('access')) {
+    if (
+      currentUrl.includes("cloudflare") ||
+      currentUrl.includes("challenge") ||
+      currentUrl.includes("access")
+    ) {
       console.log(`🛡️ Cloudflare challenge detected in URL: ${currentUrl}`);
       return true;
     }
-    
+
     return false;
   } catch (error) {
-    console.log('⚠️ Error detecting Cloudflare challenge:', error.message);
+    console.log("⚠️ Error detecting Cloudflare challenge:", error.message);
     return false;
   }
 }
 
-// This code adds follow automation after YouTube browsing in the X/Twitter automation script.
 export default router;
