@@ -466,14 +466,36 @@ router.post("/navigate", async (req, res) => {
 
     console.log("Navigating to:", url);
 
-    // Navigate with timeout
-    await currentPage.goto(url, {
-      waitUntil: "networkidle",
-      timeout: 30000,
-    });
-
-    // Wait a bit for page to fully load
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Enhanced navigation for X.com with better loading handling
+    if (url.includes('x.com') || url.includes('twitter.com')) {
+      console.log("Navigating to X/Twitter with enhanced loading...");
+      
+      // First, try to navigate with domcontentloaded (faster)
+      await currentPage.goto(url, {
+        waitUntil: "domcontentloaded",
+        timeout: 45000,
+      });
+      
+      // Wait for main content to appear
+      try {
+        await currentPage.waitForSelector('main', { timeout: 10000 });
+        console.log("Main content loaded");
+      } catch (error) {
+        console.log("Main content not found, continuing anyway");
+      }
+      
+      // Additional wait for scripts to load
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      
+    } else {
+      // Standard navigation for other sites
+      await currentPage.goto(url, {
+        waitUntil: "networkidle",
+        timeout: 30000,
+      });
+      
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
 
     const currentUrl = await currentPage.url();
     const title = await currentPage.title();
