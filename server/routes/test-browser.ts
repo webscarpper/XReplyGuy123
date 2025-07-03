@@ -380,9 +380,9 @@ router.post("/test-connection", async (req, res) => {
     // Cleanup existing session
     await cleanupSession();
 
-    // Create new Browserbase session with Pro plan settings
-    console.log("Creating new Browserbase session with Pro plan settings...");
-    currentSession = await browserbase.sessions.create({
+    // Create new Browserbase session with Developer plan settings
+    console.log("Creating new Browserbase session with Developer plan settings...");
+    const sessionConfig = {
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
         viewport: {
@@ -394,13 +394,17 @@ router.post("/test-connection", async (req, res) => {
           locales: ["en-US"],
           operatingSystems: ["windows"],
         },
-        // Disable automatic CAPTCHA solving - let user handle manually
+        // CRITICAL: Disable automatic CAPTCHA solving
         solveCaptchas: false,
       },
-      proxies: true, // Pro plan feature
-      timeout: 21600, // 6 hours in seconds (Pro plan allows longer sessions)
-      keepAlive: true, // Pro plan feature for session persistence
-    });
+      proxies: true,
+      timeout: 3600, // 1 hour in seconds for Developer plan
+    };
+    
+    console.log("🚫 CAPTCHA auto-solving DISABLED - manual solving required");
+    console.log("Session config:", JSON.stringify(sessionConfig, null, 2));
+    
+    currentSession = await browserbase.sessions.create(sessionConfig);
 
     console.log(`Browserbase session created: ${currentSession.id}`);
 
@@ -431,14 +435,13 @@ router.post("/test-connection", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Successfully connected to Browserbase with Pro plan features",
+      message: "Successfully connected to Browserbase with Developer plan features",
       sessionId: currentSession.id,
       liveViewUrl: liveViewUrl,
       stealthEnabled: true,
-      captchaSolving: false, // Manual solving preferred
+      captchaSolving: false, // Manual CAPTCHA solving - automatic solving disabled
       proxyEnabled: true,
-      timeout: "6 hours",
-      keepAlive: true,
+      timeout: "1 hour",
       status: "connected",
     });
   } catch (error: any) {
