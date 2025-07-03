@@ -394,6 +394,8 @@ router.post("/test-connection", async (req, res) => {
           locales: ["en-US"],
           operatingSystems: ["windows"],
         },
+        // Disable automatic CAPTCHA solving - let user handle manually
+        solveCaptchas: false,
       },
       proxies: true, // Pro plan feature
       timeout: 21600, // 6 hours in seconds (Pro plan allows longer sessions)
