@@ -174,7 +174,8 @@ async function cleanupSession() {
     try {
       console.log("Terminating Browserbase session:", currentSession.id);
       await browserbase.sessions.update(currentSession.id, {
-        status: "REQUEST_TERMINATION",
+        projectId: process.env.BROWSERBASE_PROJECT_ID!,
+        status: "REQUEST_RELEASE" as any,
       });
       console.log("Browserbase session terminated successfully");
     } catch (e) {
@@ -205,13 +206,18 @@ async function saveCookiesToDatabase(sessionId: string, page: Page) {
 
     const cookies = await page.context().cookies();
 
-    // Filter X/Twitter related cookies only
+    // Enhanced cookie filtering - only X/Twitter related and non-expired
     const xCookies = cookies.filter(
-      (cookie) =>
-        cookie.domain.includes("x.com") ||
-        cookie.domain.includes("twitter.com") ||
-        cookie.domain.includes(".x.com") ||
-        cookie.domain.includes(".twitter.com"),
+      (cookie) => {
+        const isXDomain = cookie.domain.includes("x.com") ||
+          cookie.domain.includes("twitter.com") ||
+          cookie.domain.includes(".x.com") ||
+          cookie.domain.includes(".twitter.com");
+        
+        const isNotExpired = !cookie.expires || new Date(cookie.expires * 1000) > new Date();
+        
+        return isXDomain && isNotExpired;
+      }
     );
 
     if (xCookies.length === 0) {
@@ -226,7 +232,6 @@ async function saveCookiesToDatabase(sessionId: string, page: Page) {
       .update(browserSessions)
       .set({
         cookies: cookiesJson,
-        updatedAt: new Date(),
       })
       .where(eq(browserSessions.sessionId, sessionId));
 
@@ -260,8 +265,34 @@ async function loadCookiesFromDatabase(sessionId: string, page: Page) {
       return false;
     }
 
-    // Add cookies to the browser context
-    await page.context().addCookies(cookies);
+    // Validate and filter cookies before loading
+    const validCookies = cookies.filter((cookie: any) => {
+      // Check if cookie has required properties
+      if (!cookie.name || !cookie.value || !cookie.domain) {
+        return false;
+      }
+      
+      // Check if cookie is not expired
+      const isNotExpired = !cookie.expires || new Date(cookie.expires * 1000) > new Date();
+      
+      const isXDomain = cookie.domain.includes("x.com") ||
+        cookie.domain.includes("twitter.com") ||
+        cookie.domain.includes(".x.com") ||
+        cookie.domain.includes(".twitter.com");
+      
+      return isNotExpired && isXDomain;
+    });
+
+    if (validCookies.length === 0) {
+      console.log("⚠️ No valid cookies found after validation");
+      return false;
+    }
+
+    // Add validated cookies to the browser context
+    await page.context().addCookies(validCookies);
+    
+    console.log(`✅ Loaded ${validCookies.length} valid cookies (filtered from ${cookies.length} total)`);
+    return true;
 
     console.log(`✅ Loaded ${cookies.length} cookies from database`);
     return true;
@@ -386,13 +417,19 @@ router.post("/test-connection", async (req, res) => {
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
         viewport: {
-          width: 1280,
-          height: 720,
+          width: 1280 + Math.floor(Math.random() * 200),
+          height: 720 + Math.floor(Math.random() * 100),
         },
         fingerprint: {
-          devices: ["desktop"] as const,
+          devices: ["desktop"],
           locales: ["en-US"],
           operatingSystems: ["windows"],
+          screen: {
+            minWidth: 1920,
+            maxWidth: 2320,
+            minHeight: 1080,
+            maxHeight: 1280,
+          },
         },
         // CRITICAL: Disable automatic CAPTCHA solving for manual control
         solveCaptchas: false,
@@ -404,7 +441,7 @@ router.post("/test-connection", async (req, res) => {
     console.log("🚫 CAPTCHA auto-solving DISABLED - manual solving required");
     console.log("Session config:", JSON.stringify(sessionConfig, null, 2));
     
-    currentSession = await browserbase.sessions.create(sessionConfig);
+    currentSession = await browserbase.sessions.create(sessionConfig as any);
 
     console.log(`Browserbase session created: ${currentSession.id}`);
 
@@ -413,6 +450,8 @@ router.post("/test-connection", async (req, res) => {
     currentBrowser = await chromium.connectOverCDP(currentSession.connectUrl);
     currentContext = currentBrowser.contexts()[0];
     currentPage = currentContext.pages()[0];
+
+    await applyStealthModifications(currentPage);
 
     // Set session timeout for 6 hours
     sessionTimeout = setTimeout(async () => {
@@ -815,12 +854,22 @@ router.post("/reconnect-session", async (req, res) => {
     const session = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
-        viewport: { width: 1280, height: 720 },
+        viewport: {
+          width: 1280 + Math.floor(Math.random() * 200),
+          height: 720 + Math.floor(Math.random() * 100),
+        },
         fingerprint: {
-          devices: ["desktop"] as const,
+          devices: ["desktop"],
           locales: ["en-US"],
           operatingSystems: ["windows"],
+          screen: {
+            minWidth: 1920,
+            maxWidth: 2320,
+            minHeight: 1080,
+            maxHeight: 1280,
+          },
         },
+        solveCaptchas: false,
       },
       proxies: true,
       timeout: 21600,
@@ -896,7 +945,8 @@ router.delete("/session", async (req, res) => {
       try {
         console.log("Terminating test session:", testSession.id);
         await browserbase.sessions.update(testSession.id, {
-          status: "REQUEST_TERMINATION",
+          projectId: process.env.BROWSERBASE_PROJECT_ID!,
+          status: "REQUEST_RELEASE" as any,
         });
         testSession = null;
         testBrowser = null;
@@ -946,11 +996,20 @@ router.post("/test-script", async (req, res) => {
     const session = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
-        viewport: { width: 1280, height: 720 },
+        viewport: {
+          width: 1280 + Math.floor(Math.random() * 200),
+          height: 720 + Math.floor(Math.random() * 100),
+        },
         fingerprint: {
           devices: ["desktop"],
           locales: ["en-US"],
           operatingSystems: ["windows"],
+          screen: {
+            minWidth: 1920,
+            maxWidth: 2320,
+            minHeight: 1080,
+            maxHeight: 1280,
+          },
         },
         solveCaptchas: false, // Manual solving preferred
       },
@@ -966,6 +1025,8 @@ router.post("/test-script", async (req, res) => {
     const defaultContext = browser.contexts()[0];
     const page = defaultContext.pages()[0];
 
+    await applyStealthModifications(page);
+
     // 3. Initialize ghost cursor
     console.log("🎯 Initializing ghost cursor...");
     let cursor;
@@ -974,16 +1035,16 @@ router.post("/test-script", async (req, res) => {
       const { createCursor } = await import("ghost-cursor-playwright");
       cursor = await createCursor(page);
 
-      if (cursor && typeof cursor.click === "function") {
+      if (cursor && (cursor as any).click) {
         console.log("✅ Ghost cursor initialized successfully");
       } else {
         throw new Error("Ghost cursor object invalid");
       }
     } catch (error) {
-      console.log("⚠️ Ghost cursor failed, creating fallback:", error.message);
+      console.log("⚠️ Ghost cursor failed, creating fallback:", (error as Error).message);
 
       cursor = {
-        click: async (element) => {
+        click: async (element: any) => {
           await element.click();
         },
       };
@@ -1082,8 +1143,8 @@ async function waitForManualLoginAndStart(
   try {
     console.log("⏳ Waiting for manual login completion...");
 
-    const maxWait = 600000; // 10 minutes for manual login
-    const checkInterval = 5000; // 5 seconds
+    const maxWait = 900000; // 15 minutes for manual login (increased from 10)
+    const checkInterval = 3000; // 3 seconds (more frequent checks)
     let elapsed = 0;
 
     while (elapsed < maxWait && !isAutomationPaused) {
@@ -1125,7 +1186,7 @@ async function waitForManualLoginAndStart(
           });
         }
       } catch (checkError) {
-        console.log("⚠️ Login check error:", checkError.message);
+        console.log("⚠️ Login check error:", (checkError as Error).message);
       }
 
       await page.waitForTimeout(checkInterval);
@@ -1190,6 +1251,50 @@ async function performEnhancedAutomation(
 
     while (Date.now() - startTime < maxDuration && !isAutomationPaused) {
       try {
+        const elapsedTime = Date.now() - startTime;
+        if (elapsedTime % (5 * 60 * 1000) < 60000) { // Check within first minute of each 5-minute interval
+          console.log("🔍 Performing periodic session health check...");
+          const isHealthy = await monitorSessionHealth(page, sessionId);
+          if (!isHealthy) {
+            console.log("🚨 Session health check failed, attempting recovery...");
+            
+            broadcastToClients({
+              type: "automation_progress",
+              message: "Session health issue detected. Attempting recovery...",
+              step: "session_recovery",
+              liveViewUrl: liveViewUrl,
+              automationState: automationState,
+            });
+            
+            // Try to navigate back to home
+            try {
+              await page.goto("https://x.com/home", {
+                waitUntil: "networkidle",
+                timeout: 30000,
+              });
+              await page.waitForTimeout(5000);
+              
+              // Check if recovery was successful
+              const recoverySuccessful = await checkIfLoggedIn(page);
+              if (!recoverySuccessful) {
+                throw new Error("Recovery failed - session may be compromised");
+              }
+              
+              console.log("✅ Recovery successful, continuing automation");
+              broadcastToClients({
+                type: "automation_progress",
+                message: "Session recovery successful. Continuing automation...",
+                step: "recovery_complete",
+                liveViewUrl: liveViewUrl,
+                automationState: automationState,
+              });
+            } catch (recoveryError: any) {
+              console.error("❌ Session recovery failed:", recoveryError.message);
+              throw new Error(`Session recovery failed: ${recoveryError.message}`);
+            }
+          }
+        }
+
         // Check if targets are met
         if (
           automationState.replies >= automationState.targetReplies &&
@@ -1286,7 +1391,7 @@ async function performEnhancedAutomation(
         } catch (recoveryError) {
           console.error(
             "❌ Recovery navigation failed:",
-            recoveryError.message,
+            (recoveryError as Error).message,
           );
         }
       }
@@ -1347,13 +1452,15 @@ function selectNextAction(): string {
     actions.push("follow");
   }
 
-  // Always include human-like activities
+  // Always include human-like activities with weighted probabilities
   actions.push(
     "browse_notifications",
-    "scroll_feed",
-    "read_post",
+    "scroll_feed", "scroll_feed", // Higher weight for passive activities
+    "read_post", "read_post",
     "youtube_break",
-    "profile_browse",
+    "profile_browse", "profile_browse",
+    "search_behavior",
+    "check_trending",
   );
 
   // Energy/focus affects action selection
@@ -1371,14 +1478,22 @@ function selectNextAction(): string {
 
 // Calculate human-like pause duration based on energy/focus
 function calculateHumanPause(): number {
-  const baseDelay = 15000; // 15 seconds base
-  const energyFactor = (100 - automationState.energyLevel) / 100; // 0-0.8
-  const focusFactor = (100 - automationState.focusLevel) / 100; // 0-0.7
-
-  const additionalDelay = (energyFactor + focusFactor) * 30000; // Up to 30s additional
-  const randomVariation = Math.random() * 10000; // ±5s random
-
-  return Math.max(5000, baseDelay + additionalDelay + randomVariation);
+  const baseDelay = 12000; // 12 seconds base (reduced from 15)
+  const energyFactor = (100 - automationState.energyLevel) / 100;
+  const focusFactor = (100 - automationState.focusLevel) / 100;
+  
+  const hour = new Date().getHours();
+  const circadianFactor = (hour >= 1 && hour <= 6) ? 1.5 : 1.0;
+  
+  // Session duration fatigue (longer pauses as session progresses)
+  const sessionDuration = Date.now() - automationState.sessionStartTime;
+  const sessionHours = sessionDuration / (60 * 60 * 1000);
+  const fatigueFactor = 1 + (sessionHours * 0.1); // 10% increase per hour
+  
+  const additionalDelay = (energyFactor + focusFactor) * 25000 * circadianFactor * fatigueFactor;
+  const randomVariation = Math.random() * 15000; // ±7.5s random
+  
+  return Math.max(3000, baseDelay + additionalDelay + randomVariation);
 }
 
 // Execute specific automation action
@@ -1917,7 +2032,7 @@ async function ensureOnHomeFeed(page: Page) {
       await page.waitForTimeout(3000);
     }
   } catch (error) {
-    console.log("⚠️ Failed to navigate to home feed:", error.message);
+    console.log("⚠️ Failed to navigate to home feed:", (error as Error).message);
   }
 }
 
@@ -1948,7 +2063,7 @@ async function findPosts(page: Page) {
 
     return [];
   } catch (error) {
-    console.log("⚠️ Failed to find posts:", error.message);
+    console.log("⚠️ Failed to find posts:", (error as Error).message);
     return [];
   }
 }
@@ -2014,6 +2129,12 @@ async function typeWithHumanBehavior(page: Page, text: string) {
 
         console.log(`✅ Retyped: "${retypeText}"`);
         continue;
+      }
+
+      if (char === ' ' && Math.random() < 0.15) {
+        const wordThinkingDelay = 300 + Math.random() * 700;
+        console.log(`💭 Word thinking pause: ${Math.round(wordThinkingDelay)}ms`);
+        await page.waitForTimeout(wordThinkingDelay);
       }
 
       // Type the character with variable speed
@@ -2112,6 +2233,95 @@ async function extractPostContentFromElement(
   }
 }
 
+async function monitorSessionHealth(page: Page, sessionId: string): Promise<boolean> {
+  try {
+    console.log("🔍 Monitoring session health...");
+    
+    // Check for detection indicators
+    const detectionIndicators = [
+      'text="Your account has been locked"',
+      'text="Suspicious activity detected"',
+      'text="Please verify your identity"',
+      'text="Account temporarily restricted"',
+      '[data-testid="error"]',
+    ];
+    
+    for (const indicator of detectionIndicators) {
+      const isPresent = await page.locator(indicator).isVisible().catch(() => false);
+      if (isPresent) {
+        console.log(`🚨 Detection indicator found: ${indicator}`);
+        return false;
+      }
+    }
+    
+    // Check if still logged in
+    const isLoggedIn = await checkIfLoggedIn(page);
+    if (!isLoggedIn) {
+      console.log("🚨 Session lost - no longer logged in");
+      return false;
+    }
+    
+    // Check for Cloudflare challenges
+    const cloudflareDetected = await detectCloudflareChallenge(page);
+    if (cloudflareDetected) {
+      console.log("🚨 Cloudflare challenge detected during session");
+      return false;
+    }
+    
+    console.log("✅ Session health check passed");
+    return true;
+  } catch (error: any) {
+    console.error("❌ Session health check failed:", error.message);
+    return false;
+  }
+}
+
+async function applyStealthModifications(page: Page): Promise<void> {
+  try {
+    console.log("🥷 Applying advanced stealth modifications...");
+    
+    await page.addInitScript(() => {
+      delete (window.navigator as any).webdriver;
+      
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5].map(() => 'Plugin'),
+      });
+      
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+      
+      const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+      HTMLCanvasElement.prototype.toDataURL = function(type?: string, quality?: any) {
+        const shift = Math.floor(Math.random() * 10) - 5;
+        const imageData = this.getContext('2d')?.getImageData(0, 0, this.width, this.height);
+        if (imageData) {
+          for (let i = 0; i < imageData.data.length; i += 4) {
+            imageData.data[i] = Math.min(255, Math.max(0, imageData.data[i] + shift));
+          }
+          this.getContext('2d')?.putImageData(imageData, 0, 0);
+        }
+        return originalToDataURL.call(this, type, quality);
+      };
+      
+      const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
+          return 'Intel Inc.';
+        }
+        if (parameter === 37446) { // UNMASKED_RENDERER_WEBGL
+          return 'Intel Iris OpenGL Engine';
+        }
+        return originalGetParameter.call(this, parameter);
+      };
+    });
+    
+    console.log("✅ Stealth modifications applied successfully");
+  } catch (error: any) {
+    console.error("❌ Failed to apply stealth modifications:", error.message);
+  }
+}
+
 // Detect if Cloudflare security challenge is present
 async function detectCloudflareChallenge(page: Page): Promise<boolean> {
   try {
@@ -2121,8 +2331,16 @@ async function detectCloudflareChallenge(page: Page): Promise<boolean> {
       '[src*="cloudflare"]',
       'text="Cloudflare"',
       'text="Please complete the security check"',
+      'text="Checking your browser"',
+      'text="This process is automatic"',
+      'text="DDoS protection by Cloudflare"',
       ".cf-challenge-running",
       "#cf-challenge-stage",
+      '[data-cf-challenge]',
+      'iframe[src*="challenges.cloudflare.com"]',
+      'iframe[src*="turnstile"]',
+      '.cf-turnstile',
+      '#cf-turnstile',
     ];
 
     for (const indicator of cloudflareIndicators) {
@@ -2150,7 +2368,7 @@ async function detectCloudflareChallenge(page: Page): Promise<boolean> {
 
     return false;
   } catch (error) {
-    console.log("⚠️ Error detecting Cloudflare challenge:", error.message);
+    console.log("⚠️ Error detecting Cloudflare challenge:", (error as Error).message);
     return false;
   }
 }
