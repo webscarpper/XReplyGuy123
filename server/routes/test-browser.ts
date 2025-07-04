@@ -416,25 +416,9 @@ router.post("/test-connection", async (req, res) => {
     const sessionConfig = {
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
-        viewport: {
-          width: 1280 + Math.floor(Math.random() * 200),
-          height: 720 + Math.floor(Math.random() * 100),
-        },
-        fingerprint: {
-          devices: ["desktop"],
-          locales: ["en-US"],
-          operatingSystems: ["windows"],
-          screen: {
-            minWidth: 1920,
-            maxWidth: 2320,
-            minHeight: 1080,
-            maxHeight: 1280,
-          },
-        },
-        // CRITICAL: Disable automatic CAPTCHA solving for manual control
-        solveCaptchas: false,
+        solveCaptchas: false, // Manual solving preferred for user control
       },
-      proxies: true,
+      proxies: true, // Essential for Cloudflare evasion
       timeout: 3600, // 1 hour in seconds for Developer plan
     };
     
@@ -850,28 +834,13 @@ router.post("/reconnect-session", async (req, res) => {
 
     console.log(`🔄 Reconnecting to session: ${sessionId}`);
 
-    // Create new browser session
+    // Create new browser session with Basic Stealth Mode
     const session = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
-        viewport: {
-          width: 1280 + Math.floor(Math.random() * 200),
-          height: 720 + Math.floor(Math.random() * 100),
-        },
-        fingerprint: {
-          devices: ["desktop"],
-          locales: ["en-US"],
-          operatingSystems: ["windows"],
-          screen: {
-            minWidth: 1920,
-            maxWidth: 2320,
-            minHeight: 1080,
-            maxHeight: 1280,
-          },
-        },
-        solveCaptchas: false,
+        solveCaptchas: false, // Manual solving preferred for user control
       },
-      proxies: true,
+      proxies: true, // Essential for Cloudflare evasion
       timeout: 21600,
       keepAlive: true,
     });
@@ -992,28 +961,13 @@ router.post("/test-script", async (req, res) => {
     };
     isAutomationPaused = false;
 
-    // 1. Create Browserbase session
+    // 1. Create Browserbase session with Basic Stealth Mode
     const session = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
-        viewport: {
-          width: 1280 + Math.floor(Math.random() * 200),
-          height: 720 + Math.floor(Math.random() * 100),
-        },
-        fingerprint: {
-          devices: ["desktop"],
-          locales: ["en-US"],
-          operatingSystems: ["windows"],
-          screen: {
-            minWidth: 1920,
-            maxWidth: 2320,
-            minHeight: 1080,
-            maxHeight: 1280,
-          },
-        },
-        solveCaptchas: false, // Manual solving preferred
+        solveCaptchas: false, // Manual solving preferred for user control
       },
-      proxies: true,
+      proxies: true, // Essential for Cloudflare evasion
       timeout: 21600, // 6 hours
       keepAlive: true,
     });
