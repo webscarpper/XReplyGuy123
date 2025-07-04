@@ -2383,30 +2383,25 @@ async function applyStealthModifications(page: Page): Promise<void> {
       
       const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
       HTMLCanvasElement.prototype.toDataURL = function(type?: string, quality?: any) {
-        const shift = Math.floor(Math.random() * 10) - 5;
+        const shift = Math.floor(Math.random() * 3) - 1; // Smaller shift: -1 to +1
         const imageData = this.getContext('2d')?.getImageData(0, 0, this.width, this.height);
-        if (imageData) {
-          for (let i = 0; i < imageData.data.length; i += 4) {
+        if (imageData && imageData.data.length > 0) {
+          for (let i = 0; i < imageData.data.length; i += 40) { // Every 10th pixel instead of every pixel
             imageData.data[i] = Math.min(255, Math.max(0, imageData.data[i] + shift));
-            imageData.data[i + 1] = Math.min(255, Math.max(0, imageData.data[i + 1] + shift));
-            imageData.data[i + 2] = Math.min(255, Math.max(0, imageData.data[i + 2] + shift));
           }
           this.getContext('2d')?.putImageData(imageData, 0, 0);
         }
         return originalToDataURL.call(this, type, quality);
       };
       
-      // Enhanced WebGL fingerprinting with vendor/renderer randomization
+      // Enhanced WebGL fingerprinting with realistic vendor/renderer values
       const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
       WebGLRenderingContext.prototype.getParameter = function(parameter) {
-        const vendors = ['Intel Inc.', 'NVIDIA Corporation', 'AMD'];
-        const renderers = ['Intel Iris OpenGL Engine', 'NVIDIA GeForce GTX 1060', 'AMD Radeon RX 580'];
-        
         if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
-          return vendors[Math.floor(Math.random() * vendors.length)];
+          return 'Google Inc. (Intel)';
         }
         if (parameter === 37446) { // UNMASKED_RENDERER_WEBGL
-          return renderers[Math.floor(Math.random() * renderers.length)];
+          return 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)';
         }
         return originalGetParameter.call(this, parameter);
       };
@@ -2415,9 +2410,8 @@ async function applyStealthModifications(page: Page): Promise<void> {
       window.fetch = function(input, init) {
         if (typeof input === 'string' && (
           input.includes('challenges.cloudflare.com') ||
-          input.includes('turnstile') ||
-          input.includes('cf-challenge') ||
-          input.includes('cloudflare')
+          input.includes('/turnstile/') ||
+          input.includes('/cf-challenge/')
         )) {
           console.log('🛡️ Applying CORS workaround for Cloudflare resource:', input);
           return originalFetch(input, {
@@ -2439,9 +2433,8 @@ async function applyStealthModifications(page: Page): Promise<void> {
       XMLHttpRequest.prototype.open = function(method: string, url: string | URL, async?: boolean, user?: string | null, password?: string | null) {
         if (typeof url === 'string' && (
           url.includes('challenges.cloudflare.com') ||
-          url.includes('turnstile') ||
-          url.includes('cf-challenge') ||
-          url.includes('cloudflare')
+          url.includes('/turnstile/') ||
+          url.includes('/cf-challenge/')
         )) {
           console.log('🛡️ Applying CORS workaround for XHR Cloudflare resource:', url);
           this.withCredentials = false;
@@ -2495,18 +2488,10 @@ async function applyStealthModifications(page: Page): Promise<void> {
       'Accept-Language': 'en-US,en;q=0.9',
       'Accept-Encoding': 'gzip, deflate, br',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-      'Upgrade-Insecure-Requests': '1',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
-      'Sec-Fetch-User': '?1',
-      'Cache-Control': 'max-age=0',
-      'sec-ch-ua': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"'
+      'Cache-Control': 'max-age=0'
     });
     
-    console.log("✅ Comprehensive advanced stealth modifications applied successfully");
+    console.log("✅ Refined stealth modifications applied successfully");
   } catch (error: any) {
     console.error("❌ Failed to apply advanced stealth modifications:", error.message);
     throw error;
