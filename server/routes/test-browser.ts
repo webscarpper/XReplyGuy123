@@ -834,11 +834,15 @@ router.post("/reconnect-session", async (req, res) => {
 
     console.log(`🔄 Reconnecting to session: ${sessionId}`);
 
-    // Create new browser session with Basic Stealth Mode
+    // Create new browser session with Enhanced Basic Stealth Mode
     const session = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
         solveCaptchas: false, // Manual solving preferred for user control
+        viewport: {
+          width: 1366 + Math.floor(Math.random() * 100),
+          height: 768 + Math.floor(Math.random() * 100),
+        },
       },
       proxies: true, // Essential for Cloudflare evasion
       timeout: 21600,
@@ -961,11 +965,15 @@ router.post("/test-script", async (req, res) => {
     };
     isAutomationPaused = false;
 
-    // 1. Create Browserbase session with Basic Stealth Mode
+    // 1. Create Browserbase session with Enhanced Basic Stealth Mode
     const session = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
         solveCaptchas: false, // Manual solving preferred for user control
+        viewport: {
+          width: 1366 + Math.floor(Math.random() * 100),
+          height: 768 + Math.floor(Math.random() * 100),
+        },
       },
       proxies: true, // Essential for Cloudflare evasion
       timeout: 21600, // 6 hours
@@ -974,10 +982,17 @@ router.post("/test-script", async (req, res) => {
 
     console.log("✅ Session created:", session.id);
 
-    // 2. Connect to browser
+    // 2. Connect to browser with enhanced stealth
     const browser = await chromium.connectOverCDP(session.connectUrl);
     const defaultContext = browser.contexts()[0];
     const page = defaultContext.pages()[0];
+
+    // Apply CDP-level stealth modifications
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
+    });
 
     await applyStealthModifications(page);
 
@@ -2236,6 +2251,23 @@ async function applyStealthModifications(page: Page): Promise<void> {
     
     await page.addInitScript(() => {
       delete (window.navigator as any).webdriver;
+      delete (window as any).chrome;
+      delete (window as any).__webdriver_evaluate;
+      delete (window as any).__selenium_evaluate;
+      delete (window as any).__webdriver_script_function;
+      delete (window as any).__webdriver_script_func;
+      delete (window as any).__webdriver_script_fn;
+      delete (window as any).__fxdriver_evaluate;
+      delete (window as any).__driver_unwrapped;
+      delete (window as any).__webdriver_unwrapped;
+      delete (window as any).__driver_evaluate;
+      delete (window as any).__selenium_unwrapped;
+      delete (window as any).__fxdriver_unwrapped;
+      
+      // Enhanced navigator properties
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
       
       Object.defineProperty(navigator, 'plugins', {
         get: () => [1, 2, 3, 4, 5].map(() => 'Plugin'),
@@ -2245,6 +2277,33 @@ async function applyStealthModifications(page: Page): Promise<void> {
         get: () => ['en-US', 'en'],
       });
       
+      Object.defineProperty(navigator, 'platform', {
+        get: () => 'Win32',
+      });
+      
+      Object.defineProperty(navigator, 'hardwareConcurrency', {
+        get: () => 4,
+      });
+      
+      Object.defineProperty(navigator, 'deviceMemory', {
+        get: () => 8,
+      });
+      
+      Object.defineProperty(navigator, 'maxTouchPoints', {
+        get: () => 0,
+      });
+      
+      if (navigator.permissions && navigator.permissions.query) {
+        const originalQuery = navigator.permissions.query;
+        navigator.permissions.query = (parameters: any) => {
+          if (parameters.name === 'notifications') {
+            return Promise.resolve({ state: Notification.permission } as any);
+          }
+          return originalQuery(parameters);
+        };
+      }
+      
+      // Enhanced canvas fingerprinting
       const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
       HTMLCanvasElement.prototype.toDataURL = function(type?: string, quality?: any) {
         const shift = Math.floor(Math.random() * 10) - 5;
@@ -2258,6 +2317,7 @@ async function applyStealthModifications(page: Page): Promise<void> {
         return originalToDataURL.call(this, type, quality);
       };
       
+      // Enhanced WebGL fingerprinting
       const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
       WebGLRenderingContext.prototype.getParameter = function(parameter) {
         if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
@@ -2268,15 +2328,94 @@ async function applyStealthModifications(page: Page): Promise<void> {
         }
         return originalGetParameter.call(this, parameter);
       };
+      
+      const originalFetch = window.fetch;
+      window.fetch = function(input, init) {
+        if (typeof input === 'string' && (
+          input.includes('challenges.cloudflare.com') ||
+          input.includes('turnstile') ||
+          input.includes('cf-challenge')
+        )) {
+          console.log('🛡️ Applying CORS workaround for Cloudflare resource:', input);
+          return originalFetch(input, {
+            ...init,
+            mode: 'no-cors',
+            credentials: 'omit'
+          });
+        }
+        return originalFetch(input, init);
+      };
+      
+      const originalXHROpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method: string, url: string | URL, async?: boolean, user?: string | null, password?: string | null) {
+        if (typeof url === 'string' && (
+          url.includes('challenges.cloudflare.com') ||
+          url.includes('turnstile') ||
+          url.includes('cf-challenge')
+        )) {
+          console.log('🛡️ Applying CORS workaround for XHR Cloudflare resource:', url);
+          this.withCredentials = false;
+        }
+        return originalXHROpen.call(this, method, url, async ?? true, user, password);
+      };
+      
+      // Spoof screen properties
+      Object.defineProperty(screen, 'colorDepth', {
+        get: () => 24,
+      });
+      
+      Object.defineProperty(screen, 'pixelDepth', {
+        get: () => 24,
+      });
+      
+      // Hide automation indicators
+      Object.defineProperty(window, 'outerHeight', {
+        get: () => window.innerHeight,
+      });
+      
+      Object.defineProperty(window, 'outerWidth', {
+        get: () => window.innerWidth,
+      });
     });
     
-    console.log("✅ Stealth modifications applied successfully");
+    // Set additional browser context options for enhanced stealth
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Cache-Control': 'max-age=0'
+    });
+    
+    console.log("✅ Advanced stealth modifications applied successfully");
   } catch (error: any) {
     console.error("❌ Failed to apply stealth modifications:", error.message);
   }
 }
 
 // Detect if Cloudflare security challenge is present
+// Monitor and handle CORS errors specifically for Cloudflare challenges
+async function handleCorsErrors(page: Page): Promise<void> {
+  page.on('response', async (response) => {
+    const url = response.url();
+    if (url.includes('challenges.cloudflare.com') && !response.ok()) {
+      console.log(`🛡️ Cloudflare challenge resource blocked: ${url}`);
+      console.log(`Status: ${response.status()}, Headers:`, await response.allHeaders());
+    }
+  });
+  
+  page.on('requestfailed', (request) => {
+    const url = request.url();
+    if (url.includes('challenges.cloudflare.com')) {
+      console.log(`🛡️ Cloudflare challenge request failed: ${url}`);
+      console.log(`Failure text: ${request.failure()?.errorText}`);
+    }
+  });
+}
+
 async function detectCloudflareChallenge(page: Page): Promise<boolean> {
   try {
     const cloudflareIndicators = [
