@@ -413,10 +413,35 @@ router.post("/test-connection", async (req, res) => {
 
     // Create new Browserbase session with Developer plan settings
     console.log("Creating new Browserbase session with Developer plan settings...");
+    // Generate realistic viewport dimensions
+    const viewportWidths = [1366, 1920, 1440, 1536, 1280];
+    const viewportHeights = [768, 1080, 900, 864, 720];
+    const randomWidth = viewportWidths[Math.floor(Math.random() * viewportWidths.length)] + Math.floor(Math.random() * 100);
+    const randomHeight = viewportHeights[Math.floor(Math.random() * viewportHeights.length)] + Math.floor(Math.random() * 100);
+    
+    const userAgents = [
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36'
+    ];
+    const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+    
+    const isMobile = Math.random() < 0.2;
+    
     const sessionConfig = {
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
         solveCaptchas: false, // Manual solving preferred for user control
+        viewport: {
+          width: isMobile ? 375 + Math.floor(Math.random() * 50) : randomWidth, // Mobile: 375-425, Desktop: varied
+          height: isMobile ? 667 + Math.floor(Math.random() * 100) : randomHeight, // Mobile: 667-767, Desktop: varied
+        },
+        ...(isMobile ? {
+          deviceScaleFactor: 2,
+          isMobile: true,
+          hasTouch: true,
+        } : {}),
       },
       proxies: true, // Essential for Cloudflare evasion
       timeout: 3600, // 1 hour in seconds for Developer plan
@@ -436,6 +461,7 @@ router.post("/test-connection", async (req, res) => {
     currentPage = currentContext.pages()[0];
 
     await applyStealthModifications(currentPage);
+    await handleCorsErrors(currentPage);
 
     // Set session timeout for 6 hours
     sessionTimeout = setTimeout(async () => {
@@ -834,11 +860,36 @@ router.post("/reconnect-session", async (req, res) => {
 
     console.log(`🔄 Reconnecting to session: ${sessionId}`);
 
-    // Create new browser session with Basic Stealth Mode
+    // Generate realistic viewport dimensions for reconnection
+    const viewportWidths = [1366, 1920, 1440, 1536, 1280];
+    const viewportHeights = [768, 1080, 900, 864, 720];
+    const randomWidth = viewportWidths[Math.floor(Math.random() * viewportWidths.length)] + Math.floor(Math.random() * 100);
+    const randomHeight = viewportHeights[Math.floor(Math.random() * viewportHeights.length)] + Math.floor(Math.random() * 100);
+    
+    const userAgents = [
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36'
+    ];
+    const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+    
+    const isMobile = Math.random() < 0.15;
+    
+    // Create new browser session with Enhanced Stealth Mode
     const session = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
         solveCaptchas: false, // Manual solving preferred for user control
+        viewport: {
+          width: isMobile ? 375 + Math.floor(Math.random() * 50) : randomWidth,
+          height: isMobile ? 667 + Math.floor(Math.random() * 100) : randomHeight,
+        },
+        ...(isMobile ? {
+          deviceScaleFactor: 2,
+          isMobile: true,
+          hasTouch: true,
+        } : {}),
       },
       proxies: true, // Essential for Cloudflare evasion
       timeout: 21600,
@@ -961,11 +1012,36 @@ router.post("/test-script", async (req, res) => {
     };
     isAutomationPaused = false;
 
-    // 1. Create Browserbase session with Basic Stealth Mode
+    // Generate realistic viewport dimensions for automation
+    const viewportWidths = [1366, 1920, 1440, 1536, 1280];
+    const viewportHeights = [768, 1080, 900, 864, 720];
+    const randomWidth = viewportWidths[Math.floor(Math.random() * viewportWidths.length)] + Math.floor(Math.random() * 100);
+    const randomHeight = viewportHeights[Math.floor(Math.random() * viewportHeights.length)] + Math.floor(Math.random() * 100);
+    
+    const userAgents = [
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36'
+    ];
+    const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+    
+    const isMobile = Math.random() < 0.1;
+    
+    // 1. Create Browserbase session with Comprehensive Advanced Stealth Mode
     const session = await browserbase.sessions.create({
       projectId: process.env.BROWSERBASE_PROJECT_ID!,
       browserSettings: {
         solveCaptchas: false, // Manual solving preferred for user control
+        viewport: {
+          width: isMobile ? 375 + Math.floor(Math.random() * 50) : randomWidth,
+          height: isMobile ? 667 + Math.floor(Math.random() * 100) : randomHeight,
+        },
+        ...(isMobile ? {
+          deviceScaleFactor: 2,
+          isMobile: true,
+          hasTouch: true,
+        } : {}),
       },
       proxies: true, // Essential for Cloudflare evasion
       timeout: 21600, // 6 hours
@@ -980,6 +1056,7 @@ router.post("/test-script", async (req, res) => {
     const page = defaultContext.pages()[0];
 
     await applyStealthModifications(page);
+    await handleCorsErrors(page);
 
     // 3. Initialize ghost cursor
     console.log("🎯 Initializing ghost cursor...");
@@ -2232,18 +2309,77 @@ async function monitorSessionHealth(page: Page, sessionId: string): Promise<bool
 
 async function applyStealthModifications(page: Page): Promise<void> {
   try {
-    console.log("🥷 Applying advanced stealth modifications...");
+    console.log("🥷 Applying comprehensive advanced stealth modifications...");
     
     await page.addInitScript(() => {
       delete (window.navigator as any).webdriver;
+      delete (window as any).chrome;
+      delete (window as any).__webdriver_evaluate;
+      delete (window as any).__selenium_evaluate;
+      delete (window as any).__webdriver_script_function;
+      delete (window as any).__webdriver_script_func;
+      delete (window as any).__webdriver_script_fn;
+      delete (window as any).__fxdriver_evaluate;
+      delete (window as any).__driver_unwrapped;
+      delete (window as any).__webdriver_unwrapped;
+      delete (window as any).__driver_evaluate;
+      delete (window as any).__selenium_unwrapped;
+      delete (window as any).__fxdriver_unwrapped;
+      delete (window as any).__webdriver_unwrapped;
+      delete (window as any).__driver_evaluate;
+      delete (window as any).__selenium_unwrapped;
+      delete (window as any).__fxdriver_unwrapped;
+      
+      // Enhanced navigator properties with realistic values
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+        configurable: true
+      });
       
       Object.defineProperty(navigator, 'plugins', {
-        get: () => [1, 2, 3, 4, 5].map(() => 'Plugin'),
+        get: () => [
+          { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+          { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+          { name: 'Native Client', filename: 'internal-nacl-plugin' }
+        ],
+        configurable: true
       });
       
       Object.defineProperty(navigator, 'languages', {
         get: () => ['en-US', 'en'],
+        configurable: true
       });
+      
+      Object.defineProperty(navigator, 'platform', {
+        get: () => 'Win32',
+        configurable: true
+      });
+      
+      Object.defineProperty(navigator, 'hardwareConcurrency', {
+        get: () => Math.floor(Math.random() * 4) + 4, // 4-7 cores
+        configurable: true
+      });
+      
+      Object.defineProperty(navigator, 'deviceMemory', {
+        get: () => Math.pow(2, Math.floor(Math.random() * 3) + 3), // 8, 16, or 32 GB
+        configurable: true
+      });
+      
+      Object.defineProperty(navigator, 'maxTouchPoints', {
+        get: () => 0,
+        configurable: true
+      });
+      
+      // Enhanced permissions API spoofing
+      if (navigator.permissions && navigator.permissions.query) {
+        const originalQuery = navigator.permissions.query;
+        navigator.permissions.query = (parameters: any) => {
+          if (parameters.name === 'notifications') {
+            return Promise.resolve({ state: 'default' } as any);
+          }
+          return originalQuery(parameters);
+        };
+      }
       
       const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
       HTMLCanvasElement.prototype.toDataURL = function(type?: string, quality?: any) {
@@ -2252,27 +2388,160 @@ async function applyStealthModifications(page: Page): Promise<void> {
         if (imageData) {
           for (let i = 0; i < imageData.data.length; i += 4) {
             imageData.data[i] = Math.min(255, Math.max(0, imageData.data[i] + shift));
+            imageData.data[i + 1] = Math.min(255, Math.max(0, imageData.data[i + 1] + shift));
+            imageData.data[i + 2] = Math.min(255, Math.max(0, imageData.data[i + 2] + shift));
           }
           this.getContext('2d')?.putImageData(imageData, 0, 0);
         }
         return originalToDataURL.call(this, type, quality);
       };
       
+      // Enhanced WebGL fingerprinting with vendor/renderer randomization
       const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
       WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        const vendors = ['Intel Inc.', 'NVIDIA Corporation', 'AMD'];
+        const renderers = ['Intel Iris OpenGL Engine', 'NVIDIA GeForce GTX 1060', 'AMD Radeon RX 580'];
+        
         if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
-          return 'Intel Inc.';
+          return vendors[Math.floor(Math.random() * vendors.length)];
         }
         if (parameter === 37446) { // UNMASKED_RENDERER_WEBGL
-          return 'Intel Iris OpenGL Engine';
+          return renderers[Math.floor(Math.random() * renderers.length)];
         }
         return originalGetParameter.call(this, parameter);
       };
+      
+      const originalFetch = window.fetch;
+      window.fetch = function(input, init) {
+        if (typeof input === 'string' && (
+          input.includes('challenges.cloudflare.com') ||
+          input.includes('turnstile') ||
+          input.includes('cf-challenge') ||
+          input.includes('cloudflare')
+        )) {
+          console.log('🛡️ Applying CORS workaround for Cloudflare resource:', input);
+          return originalFetch(input, {
+            ...init,
+            mode: 'no-cors',
+            credentials: 'omit',
+            headers: {
+              ...((init as any)?.headers || {}),
+              'Origin': window.location.origin,
+              'Referer': window.location.href
+            }
+          });
+        }
+        return originalFetch(input, init);
+      };
+      
+      // Enhanced XHR CORS handling
+      const originalXHROpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method: string, url: string | URL, async?: boolean, user?: string | null, password?: string | null) {
+        if (typeof url === 'string' && (
+          url.includes('challenges.cloudflare.com') ||
+          url.includes('turnstile') ||
+          url.includes('cf-challenge') ||
+          url.includes('cloudflare')
+        )) {
+          console.log('🛡️ Applying CORS workaround for XHR Cloudflare resource:', url);
+          this.withCredentials = false;
+        }
+        return originalXHROpen.call(this, method, url, async ?? true, user, password);
+      };
+      
+      Object.defineProperty(screen, 'colorDepth', {
+        get: () => 24,
+        configurable: true
+      });
+      
+      Object.defineProperty(screen, 'pixelDepth', {
+        get: () => 24,
+        configurable: true
+      });
+      
+      Object.defineProperty(window, 'outerHeight', {
+        get: () => window.innerHeight,
+        configurable: true
+      });
+      
+      Object.defineProperty(window, 'outerWidth', {
+        get: () => window.innerWidth,
+        configurable: true
+      });
+      
+      Object.defineProperty(window, 'chrome', {
+        get: () => ({
+          runtime: {},
+          loadTimes: function() {},
+          csi: function() {},
+          app: {}
+        }),
+        configurable: true
+      });
+      
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        const originalEnumerateDevices = navigator.mediaDevices.enumerateDevices;
+        navigator.mediaDevices.enumerateDevices = function() {
+          return Promise.resolve([
+            { deviceId: 'default', kind: 'audioinput', label: 'Default - Microphone', groupId: 'group1' },
+            { deviceId: 'default', kind: 'audiooutput', label: 'Default - Speaker', groupId: 'group1' },
+            { deviceId: 'default', kind: 'videoinput', label: 'Default - Camera', groupId: 'group2' }
+          ] as MediaDeviceInfo[]);
+        };
+      }
     });
     
-    console.log("✅ Stealth modifications applied successfully");
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Cache-Control': 'max-age=0',
+      'sec-ch-ua': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"'
+    });
+    
+    console.log("✅ Comprehensive advanced stealth modifications applied successfully");
   } catch (error: any) {
-    console.error("❌ Failed to apply stealth modifications:", error.message);
+    console.error("❌ Failed to apply advanced stealth modifications:", error.message);
+    throw error;
+  }
+}
+
+// Monitor and handle CORS errors specifically for Cloudflare challenges
+async function handleCorsErrors(page: Page): Promise<void> {
+  try {
+    page.on('response', async (response) => {
+      const url = response.url();
+      if ((url.includes('cloudflare') || url.includes('turnstile') || url.includes('cf-challenge')) && !response.ok()) {
+        console.log(`🛡️ Cloudflare challenge resource blocked: ${url}`);
+        console.log(`Status: ${response.status()}, Headers:`, await response.allHeaders().catch(() => ({})));
+      }
+    });
+    
+    page.on('requestfailed', (request) => {
+      const url = request.url();
+      if (url.includes('cloudflare') || url.includes('turnstile') || url.includes('cf-challenge')) {
+        console.log(`🛡️ Cloudflare challenge request failed: ${url}`);
+        console.log(`Failure text: ${request.failure()?.errorText || 'Unknown error'}`);
+      }
+    });
+    
+    page.on('console', (msg) => {
+      const text = msg.text();
+      if (text.includes('CORS') || text.includes('Access-Control-Allow-Origin')) {
+        console.log(`🛡️ CORS-related console message: ${text}`);
+      }
+    });
+    
+    console.log("✅ CORS error monitoring enabled");
+  } catch (error: any) {
+    console.error("❌ Failed to setup CORS error monitoring:", error.message);
   }
 }
 
